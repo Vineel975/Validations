@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EditableInfoField } from "@/components/result-view/editable-info-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +41,7 @@ import type {
 
 interface PatientInfoTabProps {
   fileName: string;
+  claimId?: string | null;
   displayAnalysis: PdfAnalysis | null;
   hasChanges: boolean;
   isSaving: boolean;
@@ -280,6 +281,7 @@ const HOSPITAL_PAST_HISTORY_COLUMNS: Array<{ label: string; aliases: string[] }>
 
 export function PatientInfoTab({
   fileName,
+  claimId: claimIdProp,
   displayAnalysis,
   hasChanges,
   isSaving,
@@ -290,6 +292,45 @@ export function PatientInfoTab({
 }: PatientInfoTabProps) {
   const patientValidation = displayAnalysis?.patientValidation;
   const patientInfoDb = displayAnalysis?.patientInfoDb;
+
+  // Auto-fetch patientInfoDb from McarePlus DB via Next.js proxy when:
+  //   - claimId is available
+  //   - patientInfoDb is not yet loaded
+  // This populates patientInfoDb.sections so getDbBackedValidationInfo can
+  // compare AI-extracted fields against DB values for all 7 fields — without
+  // needing Convex to reach the private SQL Server.
+  useEffect(() => {
+    const claimId = (claimIdProp ?? displayAnalysis?.patientInfoDb?.claimId)?.trim();
+    if (!claimId) return;
+    if (patientInfoDb?.sections?.length) return; // already loaded
+
+    let cancelled = false;
+    const fetchDb = async () => {
+      try {
+        const response = await fetch("/api/patient-info-db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claimId }),
+        });
+        if (!response.ok || cancelled) return;
+        const payload = (await response.json()) as {
+          snapshot?: PatientInfoDbSnapshot | null;
+          error?: string;
+        };
+        if (payload.snapshot && !cancelled) {
+          onUpdateAnalysis((current) => ({
+            ...current,
+            patientInfoDb: payload.snapshot ?? undefined,
+          }));
+        }
+      } catch {
+        // Silent fail — validation icons just won't show
+      }
+    };
+    void fetchDb();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimIdProp]);
   const fieldPageNumbers: Partial<Record<PatientInfoFieldKey, number | null | undefined>> = {
     patientName: displayAnalysis?.patientName?.pageNumber,
     hospitalName: displayAnalysis?.hospitalName?.pageNumber,
