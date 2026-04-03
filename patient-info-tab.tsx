@@ -764,6 +764,45 @@ export function PatientInfoTab({
 
   const areComparableValuesEqual = (left: string, right: string): boolean => {
     const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
+
+    // Numeric comparison (age)
+    const lNum = parseFloat(left), rNum = parseFloat(right);
+    if (!isNaN(lNum) && !isNaN(rNum)) return lNum === rNum;
+
+    // Date normalization — convert both to YYYY-MM-DD before comparing
+    const normalizeDate = (s: string): string => {
+      const clean = s.trim();
+      // ISO: 2024-01-15T... or 2024-01-15
+      const iso = clean.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (iso) return iso[1];
+      // DD/MM/YYYY or DD-MM-YYYY
+      const dmy = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
+      // DD-Mon-YYYY
+      const mon: Record<string,string> = {jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12"};
+      const monM = clean.match(/^(\d{1,2})[\/\-\s]([A-Za-z]{3})[\/\-\s](\d{2,4})$/);
+      if (monM) {
+        const mm = mon[monM[2].toLowerCase()] ?? "00";
+        const yyyy = monM[3].length === 2 ? "20" + monM[3] : monM[3];
+        return `${yyyy}-${mm}-${monM[1].padStart(2,"0")}`;
+      }
+      return "";
+    };
+    const ld = normalizeDate(left), rd = normalizeDate(right);
+    if (ld && rd) return ld === rd;
+
+    // Gender normalization
+    const normalizeGender = (s: string): string => {
+      const g = normalize(s);
+      if (g === "1" || g === "f" || g === "female") return "female";
+      if (g === "2" || g === "m" || g === "male")   return "male";
+      return g;
+    };
+    const genderKeywords = ["male","female","m","f","1","2"];
+    if (genderKeywords.includes(normalize(left)) || genderKeywords.includes(normalize(right))) {
+      return normalizeGender(left) === normalizeGender(right);
+    }
+
     return normalize(left) === normalize(right);
   };
 
@@ -1709,8 +1748,8 @@ export function PatientInfoTab({
         label: "Patient Name",
         changeLabel: "PATIENT NAME",
         placeholder: "Patient name",
-        dbEntries: enrolledDbEntries,
-        dbAliases: ["patientname", "membername"],
+        dbEntries: allDbEntries,
+        dbAliases: ["membername", "patientname", "name"],
         validationField: "patientName",
       },
       {
@@ -1728,8 +1767,8 @@ export function PatientInfoTab({
         changeLabel: "PATIENT AGE",
         placeholder: "Age",
         type: "number",
-        dbEntries: enrolledDbEntries,
-        dbAliases: ["age"],
+        dbEntries: allDbEntries,
+        dbAliases: ["age", "patientage"],
         validationField: "patientAge",
       },
       {
@@ -1737,8 +1776,8 @@ export function PatientInfoTab({
         label: "Gender",
         changeLabel: "GENDER",
         placeholder: "Gender",
-        dbEntries: enrolledDbEntries,
-        dbAliases: ["gender", "genderid"],
+        dbEntries: allDbEntries,
+        dbAliases: ["gender", "genderid", "patientgender"],
         validationField: "patientGender",
       },
       {
@@ -1756,7 +1795,7 @@ export function PatientInfoTab({
         changeLabel: "DOCUMENT DATE",
         placeholder: "Document date",
         dbEntries: allDbEntries,
-        dbAliases: ["documentdate", "date", "createddate"],
+        dbAliases: ["dateofbill", "documentdate", "billdate", "date", "createddate", "invoicedate"],
         extendedValidationKey: "documentDate",
       },
       {
@@ -1827,32 +1866,7 @@ export function PatientInfoTab({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-        <div>
-          <CardTitle>Patient Information</CardTitle>
-        </div>
-          <div className="flex items-center gap-2">
-            {hasChanges && (
-              <Button
-                onClick={onSave}
-                disabled={isSaving}
-                className="bg-[#1E3A8A] hover:bg-[#1E40AF]"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
+        <CardTitle>Patient Information</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {renderExtractedPatientInformation()}
