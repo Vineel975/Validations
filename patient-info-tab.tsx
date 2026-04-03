@@ -292,6 +292,7 @@ export function PatientInfoTab({
 }: PatientInfoTabProps) {
   const patientValidation = displayAnalysis?.patientValidation;
   const patientInfoDb = displayAnalysis?.patientInfoDb;
+  const [isValidating, setIsValidating] = useState(false);
 
   // Auto-fetch patientInfoDb from McarePlus DB via Next.js proxy when:
   //   - claimId is available
@@ -306,6 +307,7 @@ export function PatientInfoTab({
 
     let cancelled = false;
     const fetchDb = async () => {
+      setIsValidating(true);
       try {
         const response = await fetch("/api/patient-info-db", {
           method: "POST",
@@ -325,6 +327,8 @@ export function PatientInfoTab({
         }
       } catch {
         // Silent fail — validation icons just won't show
+      } finally {
+        if (!cancelled) setIsValidating(false);
       }
     };
     void fetchDb();
@@ -1869,6 +1873,15 @@ export function PatientInfoTab({
         <CardTitle>Patient Information</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {isValidating && (
+          <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
+            <svg className="h-3.5 w-3.5 animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Validating fields against Spectra DB — this may take 10–20 seconds. Please wait...
+          </div>
+        )}
         {renderExtractedPatientInformation()}
 
         {/* Document Checklist Section */}
