@@ -695,7 +695,7 @@ function buildValidationFromSpectraFields(
     },
   ];
 
-  const fields: PatientValidationField[] = fieldDefs
+  const fields = fieldDefs
     .filter((d) => d.aiValue !== null && d.aiValue !== undefined && String(d.aiValue).trim() !== "")
     .filter((d) => d.spectraValue && d.spectraValue.trim() !== "")
     .map((d) => {
@@ -710,9 +710,9 @@ function buildValidationFromSpectraFields(
         aiSource: "AI extraction from hospital bill",
         dbSource: "Spectra page (DB values from McarePlus)",
       };
-    });
+    }) as PatientValidationField[];
 
-  const mismatches = fields.filter((f) => !f.isMatch);
+  const mismatches = (fields as PatientValidationField[]).filter((f) => !f.isMatch);
   const status = fields.length === 0
     ? "skipped"
     : mismatches.length > 0
@@ -852,7 +852,7 @@ export const processPdfInternal = internalAction({
       // If Spectra passed its DOM field values in the payload (spectraFields),
       // use those directly — no DB query needed from Convex.
       // If not present, fall back to the DB query (requires reachable SQL Server).
-      const spectraFields = job?.spectraFields as {
+      const spectraFields = (job as any)?.spectraFields as {
         patientName?:   string;
         patientAge?:    string;
         patientGender?: string;
