@@ -1,4 +1,4 @@
-﻿@{
+@{
     ViewBag.TitleDepartment = "Claims";
     ViewBag.Title = "Claim";
     Layout = "~/Views/Shared/_Layout.cshtml";
@@ -7230,48 +7230,38 @@
             var gender = getInputVal('hdnGender');
             if (gender) spectraFields.patientGender = gender;
 
-            // Policy/UHID number — received patient UHID
-            var uhid = getInputVal('txtReceivedPatient_PatientUHID');
-            if (uhid) spectraFields.policyNumber = uhid;
-
-            // Hospital name — system patient provider span → DOM inputs → basicData
-            var hospital = getSpanText('spnSystemPatient_ProviderName') ||
-                           getSpanText('spnProvider_Name') ||
-                           getInputVal('txtProvider_Name');
-            // basicData is available at this point (set at page load)
-            if (!hospital && typeof basicData !== 'undefined' && basicData[0]) {
-                hospital = (basicData[0].ProviderName || basicData[0].HospitalName || basicData[0].Name || '').toString().trim();
+            // Policy/UHID — basicData[0].uhidno is always available at page load
+            if (typeof basicData !== 'undefined' && basicData[0] && basicData[0].uhidno) {
+                spectraFields.policyNumber = basicData[0].uhidno.toString().trim();
             }
-            if (hospital) spectraFields.hospitalName = hospital;
+            if (!spectraFields.policyNumber) {
+                var uhid = getInputVal('txtReceivedPatient_PatientUHID') ||
+                           getSpanText('spnSystemPatient_InsurerUHID');
+                if (uhid) spectraFields.policyNumber = uhid;
+            }
 
-            // Admission date — basicData is the most reliable source (direct DB column)
-            var doa = '';
+            // Admission date — basicData[0].dateofadmission confirmed column name
             if (typeof basicData !== 'undefined' && basicData[0] && basicData[0].dateofadmission) {
-                doa = basicData[0].dateofadmission.toString().trim();
+                spectraFields.admissionDate = basicData[0].dateofadmission.toString().trim();
             }
-            if (!doa) {
-                doa = getInputVal('txtReceivedPatient_DOA') ||
-                      getInputVal('txtClaim_DOA') ||
-                      getSpanText('spnClaim_DOA');
-            }
-            if (doa) spectraFields.admissionDate = doa;
 
-            // Document date (bill date) — from basicData
-            var docDate = '';
-            if (typeof basicData !== 'undefined' && basicData[0]) {
-                docDate = (basicData[0].dateofbill || basicData[0].DocumentDate ||
-                           basicData[0].BillDate   || basicData[0].InvoiceDate || '').toString().trim();
+            // Age, Hospital, Document Date — fetch from server synchronously
+            // These are not in basicData; we get them via GetClaimFieldsForValidation
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', '/MedicalScrutiny/GetClaimFieldsForValidation?claimId=' + encodeURIComponent(claimID), false);
+                xhr.send(null);
+                if (xhr.status === 200) {
+                    var fields = JSON.parse(xhr.responseText);
+                    if (fields.age)          spectraFields.patientAge   = fields.age;
+                    if (fields.hospitalName) spectraFields.hospitalName  = fields.hospitalName;
+                    if (fields.documentDate) spectraFields.documentDate  = fields.documentDate;
+                    if (fields.dischargeDate && !spectraFields.dischargeDate)
+                                             spectraFields.dischargeDate = fields.dischargeDate;
+                }
+            } catch(e) {
+                console.warn('[ClaimAI] GetClaimFieldsForValidation failed:', e);
             }
-            if (docDate) spectraFields.documentDate = docDate;
-
-            // Discharge date
-            var dod = getInputVal('txtReceivedPatient_DOD') ||
-                      getInputVal('txtClaim_DOD') ||
-                      getSpanText('spnClaim_DOD');
-            if (!dod && typeof basicData !== 'undefined' && basicData[0] && basicData[0].dateofDischarge) {
-                dod = basicData[0].dateofDischarge.toString().trim();
-            }
-            if (dod) spectraFields.dischargeDate = dod;
 
             console.log('[ClaimAI] Spectra fields collected:', spectraFields);
 
