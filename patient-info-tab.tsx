@@ -1790,7 +1790,9 @@ export function PatientInfoTab({
         changeLabel: "POLICY NUMBER",
         placeholder: "Policy number",
         dbEntries: allDbEntries,
-        dbAliases: ["policyno", "policynumber"],
+        // Use UHIDNO — the patient's unique health ID, same column
+        // validateExtractedPatient compares against in lib/db.ts
+        dbAliases: ["uhidno", "uhid", "patientuhid", "policyno", "policynumber"],
         validationField: "policyNumber",
       },
       {
