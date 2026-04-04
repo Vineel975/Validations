@@ -526,30 +526,42 @@ export function ResultView({
         }
       }
 
-      // Build prompt
-      const prompt = `You are a health insurance claim auditor. Based on the following information, decide which approved accommodation type should be applied.
+      // Build prompt — using string concat to avoid nested template literal syntax errors
+      const facilityList = facilityOptions.map((f) => "  " + f.id + ": " + f.text).join("\n");
+      const roomRowsText = roomRows.length > 0
+        ? "Room details: " + JSON.stringify(roomRows)
+        : "";
+      const roomChargeNum = (days && roomCharge)
+        ? Math.round(Number(String(roomCharge).replace(/[^0-9]/g, "")) / days)
+        : 0;
+      const roomChargePerDay = (days && roomCharge)
+        ? " over " + String(days) + " days (approx Rs." + String(roomChargeNum) + "/day)"
+        : "";
 
-AVAILED ACCOMMODATION (what patient used): ${availedText}
-
-AVAILABLE ACCOMMODATION OPTIONS (id → name):
-${facilityOptions.map((f) => `  ${f.id}: ${f.text}`).join("
-")}
-
-BENEFIT PLAN ROOM CONDITIONS:
-${roomNotes || "(no room notes in benefit plan)"}
-${roomRows.length > 0 ? `Room details: ${JSON.stringify(roomRows)}` : ""}
-
-TARIFF ROOM RENT CAP: ${roomRentCap ?? "(not specified in tariff)"}
-
-HOSPITAL ROOM CHARGES: ${roomCharge ?? "(not found in bill summary)"}${days ? ` over ${days} days (≈ ₹${roomCharge ? Math.round(Number(String(roomCharge).replace(/[^\d]/g, "")) / days) : "unknown"}/day)` : ""}
-
-INSTRUCTIONS:
-1. Compare the availed accommodation with the benefit plan room conditions and tariff cap.
-2. If the availed room is within the eligible limit → approve the same room type.
-3. If the availed room exceeds the limit (e.g. private room but policy covers semi-private) → approve the highest eligible room type.
-4. If no room conditions are specified → approve same as availed.
-5. Return ONLY a JSON object with exactly this shape, no explanation:
-{"facilityId": "<id from options above>", "reason": "<one sentence reason>"}`;
+      const prompt = [
+        "You are a health insurance claim auditor. Based on the following information, decide which approved accommodation type should be applied.",
+        "",
+        "AVAILED ACCOMMODATION (what patient used): " + availedText,
+        "",
+        "AVAILABLE ACCOMMODATION OPTIONS (id - name):",
+        facilityList,
+        "",
+        "BENEFIT PLAN ROOM CONDITIONS:",
+        roomNotes || "(no room notes in benefit plan)",
+        roomRowsText,
+        "",
+        "TARIFF ROOM RENT CAP: " + (roomRentCap ?? "(not specified in tariff)"),
+        "",
+        "HOSPITAL ROOM CHARGES: " + (roomCharge ?? "(not found in bill summary)") + roomChargePerDay,
+        "",
+        "INSTRUCTIONS:",
+        "1. Compare the availed accommodation with the benefit plan room conditions and tariff cap.",
+        "2. If the availed room is within the eligible limit, approve the same room type.",
+        "3. If the availed room exceeds the limit (e.g. private room but policy covers semi-private), approve the highest eligible room type.",
+        "4. If no room conditions are specified, approve same as availed.",
+        "5. Return ONLY a JSON object with exactly this shape, no explanation:",
+        '{"facilityId": "<id from options above>", "reason": "<one sentence reason>"}',
+      ].join("\n");
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
