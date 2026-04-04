@@ -28,7 +28,7 @@ import { MedicalAdmissibilityTab } from "./result-view/tabs/medical-admissibilit
 import { FinancialSummaryTab } from "./result-view/tabs/financial-summary-tab";
 import { useMutation as useConvexMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { CheckCircle2, HelpCircle, XCircle } from "lucide-react";
+import { ChevronDown, Save } from "lucide-react";
 
 function getBasename(filePath: string): string {
   const parts = filePath.split(/[/\\]/);
@@ -46,6 +46,77 @@ interface ResultViewProps {
   onDocumentLoadSuccess: ({ numPages }: { numPages: number }) => void;
   onDocumentLoadError: (error: Error) => void;
   pdfError: Error | null;
+}
+
+// ── Save split-button with dropdown ──────────────────────────────────────────
+function SaveDropdown({
+  onSave,
+  onSaveAndRaiseQuery,
+  onDontSaveAndRaiseQuery,
+  isSaving,
+}: {
+  onSave: () => void;
+  onSaveAndRaiseQuery: () => void;
+  onDontSaveAndRaiseQuery: () => void;
+  isSaving: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative flex w-full">
+      {/* Main Save button */}
+      <Button
+        type="button"
+        disabled={isSaving}
+        onClick={onSave}
+        className="flex-1 rounded-r-none !border-emerald-700 !bg-emerald-600 !text-white hover:!bg-emerald-700"
+      >
+        <Save className="mr-1.5 h-4 w-4" />
+        {isSaving ? "Saving..." : "Save"}
+      </Button>
+
+      {/* Chevron dropdown trigger */}
+      <button
+        type="button"
+        disabled={isSaving}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center justify-center rounded-r-md border-l border-emerald-700 bg-emerald-600 px-2 text-white hover:bg-emerald-700 disabled:opacity-50"
+        aria-label="More save options"
+      >
+        <ChevronDown className="h-4 w-4" />
+      </button>
+
+      {/* Dropdown menu */}
+      {open && (
+        <>
+          {/* Click-outside overlay */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute bottom-full left-0 z-50 mb-1 w-56 rounded-md border border-border bg-background shadow-lg">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted"
+              onClick={() => { setOpen(false); onSaveAndRaiseQuery(); }}
+            >
+              <Save className="h-4 w-4 text-emerald-600" />
+              Save and raise query
+            </button>
+            <div className="mx-3 border-t border-border" />
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted"
+              onClick={() => { setOpen(false); onDontSaveAndRaiseQuery(); }}
+            >
+              <ChevronDown className="h-4 w-4 text-amber-500" />
+              Don&apos;t save and raise query
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function ResultView({
@@ -694,52 +765,15 @@ export function ResultView({
                   />
                 </section>
                 <div className="mt-6 border-t border-border/80 py-4">
-                  <div className="flex items-center">
-                    <div
-                      data-slot="button-group"
-                      className="flex w-full items-center gap-2"
-                    >
-                      <Button
-                        type="button"
-                        variant="default"
-                        onClick={() => setReviewDecision("approve")}
-                        className={`flex-1 !border-emerald-700 !bg-emerald-600 !text-white hover:!bg-emerald-700 ${
-                          reviewDecision === "approve"
-                            ? "ring-2 ring-emerald-300 ring-offset-1"
-                            : ""
-                        }`}
-                      >
-                        <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                        Approve
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="default"
-                        onClick={() => setReviewDecision("deny")}
-                        className={`flex-1 !border-rose-700 !bg-rose-600 !text-white hover:!bg-rose-700 ${
-                          reviewDecision === "deny"
-                            ? "ring-2 ring-rose-300 ring-offset-1"
-                            : ""
-                        }`}
-                      >
-                        <XCircle className="mr-1.5 h-4 w-4" />
-                        Deny
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="default"
-                        onClick={() => setIsQueryDialogOpen(true)}
-                        className={`flex-1 !border-amber-700 !bg-amber-500 !text-white hover:!bg-amber-600 ${
-                          reviewDecision === "query"
-                            ? "ring-2 ring-amber-300 ring-offset-1"
-                            : ""
-                        }`}
-                      >
-                        <HelpCircle className="mr-1.5 h-4 w-4" />
-                        Raise Query
-                      </Button>
-                    </div>
-                  </div>
+                  <SaveDropdown
+                    onSave={handleSave}
+                    onSaveAndRaiseQuery={() => {
+                      handleSave();
+                      setIsQueryDialogOpen(true);
+                    }}
+                    onDontSaveAndRaiseQuery={() => setIsQueryDialogOpen(true)}
+                    isSaving={isSaving}
+                  />
                 </div>
                 {isQueryDialogOpen ? (
                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -774,9 +808,7 @@ export function ResultView({
                           <Button
                             type="button"
                             variant="outline"
-                            onClick={() => {
-                              setIsQueryDialogOpen(false);
-                            }}
+                            onClick={() => setIsQueryDialogOpen(false)}
                           >
                             Cancel
                           </Button>
