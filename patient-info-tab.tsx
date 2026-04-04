@@ -1663,12 +1663,6 @@ export function PatientInfoTab({
 
     return (
       <>
-        {snapshot.errors && snapshot.errors.length > 0 && (
-          <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            {snapshot.errors.join(" | ")}
-          </div>
-        )}
-
         <div className="space-y-4">
           {DB_GROUP_ORDER.map((group) => {
             const sections = groupedDbSections.get(group.id) || [];
