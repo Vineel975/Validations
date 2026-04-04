@@ -7216,21 +7216,23 @@
 
             var spectraFields = {};
 
-            // Patient name — prefer system (DB) span, fallback to received input
-            var sysName = getSpanText('spnSystemPatient_PatientName');
+            // Patient name — strip "(Gender)" suffix that Spectra appends e.g. "John Doe(M)"
+            // prefer system (DB) span, fallback to received input
+            function stripGenderSuffix(name) {
+                // Removes trailing (M), (F), (Male), (Female), (O), (Other) etc.
+                return name.replace(/\s*\([MFOmfo][a-zA-Z]*\)\s*$/, '').trim();
+            }
+            var sysName = stripGenderSuffix(getSpanText('spnSystemPatient_PatientName'));
             var recName = getInputVal('txtReceivedPatient_PatientName');
-            if (sysName)  spectraFields.patientName = sysName;
-            else if (recName) spectraFields.patientName = recName;
+            if (sysName)       spectraFields.patientName = sysName;
+            else if (recName)  spectraFields.patientName = recName;
 
-            // Age — received input field
-            var age = getInputVal('txtReceivedPatient_Age');
-            if (age) spectraFields.patientAge = age;
-
-            // Gender — hidden field set from ViewData
+            // Gender — hidden field set from ViewData (numeric: 1=Female, 2=Male)
             var gender = getInputVal('hdnGender');
             if (gender) spectraFields.patientGender = gender;
 
-            // Policy/UHID — basicData[0].uhidno is always available at page load
+            // Policy/UHID — basicData[0].uhidno is MemberPolicy.UHIDNO, which is what
+            // ClaimAI's AI extracts as "policyNumber" from the bill
             if (typeof basicData !== 'undefined' && basicData[0] && basicData[0].uhidno) {
                 spectraFields.policyNumber = basicData[0].uhidno.toString().trim();
             }
@@ -7274,6 +7276,18 @@
                 payload.tariffBase64   = tarB64;
                 payload.tariffFileName = tarFileName;
             }
+            // Availed accommodation — send so ClaimAI can populate Aprv Accommodation on save
+            var availedAccommId = $('#ddlReceivedAccomodation').val();
+            if (availedAccommId) spectraFields.availedAccommodationId = availedAccommId.toString();
+
+            // Full mFacility options so ClaimAI knows which IDs are valid
+            var facilityOptions = [];
+            $('#ddlApprovedFacility option').each(function() {
+                var v = $(this).val(), t = $(this).text();
+                if (v) facilityOptions.push({ id: v.toString(), text: t });
+            });
+            if (facilityOptions.length > 0) spectraFields.facilityOptions = facilityOptions;
+
             // Only add spectraFields if at least one value was found
             if (Object.keys(spectraFields).length > 0) {
                 payload.spectraFields = spectraFields;
@@ -8452,6 +8466,23 @@
             if(basicData[0].IsBufferEnabled==true){
                 checkBufferClaim();
             }
+
+            // Listen for postMessage from ClaimAI iframe — sets Aprv Accommodation on Save
+            window.addEventListener('message', function(event) {
+                if (!event.data || event.data.source !== 'claimai') return;
+                if (event.data.type === 'setApprovedAccommodation') {
+                    var facilityId = event.data.facilityId;
+                    if (facilityId) {
+                        var $ddl = $('#ddlApprovedFacility');
+                        if ($ddl.find('option[value="' + facilityId + '"]').length > 0) {
+                            $ddl.val(facilityId).trigger('change');
+                            console.log('[ClaimAI] Set Aprv Accommodation to facilityId:', facilityId);
+                        } else {
+                            console.warn('[ClaimAI] facilityId not found in dropdown:', facilityId);
+                        }
+                    }
+                }
+            });
 
             $("#ddlReceivedAccomodation").change(function () {
                 var ID = $('#ddlReceivedAccomodation').val();
