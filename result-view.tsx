@@ -46,6 +46,11 @@ interface ResultViewProps {
   onDocumentLoadSuccess: ({ numPages }: { numPages: number }) => void;
   onDocumentLoadError: (error: Error) => void;
   pdfError: Error | null;
+  spectraFields?: {
+    availedAccommodationId?: string;
+    facilityOptions?: Array<{ id: string; text: string }>;
+    [key: string]: unknown;
+  } | null;
 }
 
 // ── Save split-button with dropdown ──────────────────────────────────────────
@@ -130,6 +135,7 @@ export function ResultView({
   onDocumentLoadSuccess,
   onDocumentLoadError,
   pdfError,
+  spectraFields,
 }: ResultViewProps) {
   const updateResult = useConvexMutation(api.processing.updateResult);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
@@ -457,6 +463,128 @@ export function ResultView({
     claimCalculation?.finalInsurerPayableNotes ||
     displayAnalysis?.finalInsurerPayableNotes;
 
+  // ── Determine approved accommodation using AI ────────────────────────────────
+  // Fetches benefit plan room rules + uses tariff/bill context to ask Claude
+  // which facility option best matches what the patient is eligible for.
+  const determineApprovedAccommodation = async (): Promise<string | null> => {
+    try {
+      const claimId = state?.claimId?.trim();
+      const facilityOptions = spectraFields?.facilityOptions ?? [];
+      const availedId = spectraFields?.availedAccommodationId;
+      if (!claimId || !facilityOptions.length || !availedId) return availedId ?? null;
+
+      // Find availed room text
+      const availedOption = facilityOptions.find((f) => f.id === availedId);
+      const availedText = availedOption?.text ?? availedId;
+
+      // Fetch benefit plan room conditions
+      let roomNotes = "";
+      let roomRows: Array<Record<string, unknown>> = [];
+      try {
+        const bpRes = await fetch("/api/benefit-plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claimId }),
+        });
+        if (bpRes.ok) {
+          const bpData = await bpRes.json() as {
+            snapshot?: {
+              remarks?: {
+                room?: Array<Record<string, unknown>>;
+                main?: Array<Record<string, unknown>>;
+              };
+            };
+          };
+          const mainRow = bpData?.snapshot?.remarks?.main?.[0] ?? {};
+          roomNotes = String(mainRow["RoomNotes"] ?? "").trim();
+          roomRows = bpData?.snapshot?.remarks?.room ?? [];
+        }
+      } catch { /* use empty */ }
+
+      // Collect tariff room rent cap
+      const tariffItems = displayAnalysis?.tariffExtractionItem ?? [];
+      const roomRentCapItem = tariffItems.find((t) =>
+        /room\s*rent\s*cap/i.test(t.name) || /accommodation\s*cap/i.test(t.name)
+      );
+      const roomRentCap = roomRentCapItem ? `₹${roomRentCapItem.amount}/day` : null;
+
+      // Collect hospital bill room charges
+      const billSummary = displayAnalysis?.hospitalSummary ?? [];
+      const roomChargeItem = billSummary.find((s) =>
+        /room/i.test(s.serviceName) || /accommodation/i.test(s.serviceName)
+      );
+      const roomCharge = roomChargeItem ? `₹${roomChargeItem.amount}` : null;
+
+      // Days in hospital
+      const admDate = displayAnalysis?.admissionDate?.value;
+      const disDate = displayAnalysis?.dischargeDate?.value;
+      let days: number | null = null;
+      if (admDate && disDate) {
+        const d1 = new Date(admDate), d2 = new Date(disDate);
+        if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+          days = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / 86400000));
+        }
+      }
+
+      // Build prompt
+      const prompt = `You are a health insurance claim auditor. Based on the following information, decide which approved accommodation type should be applied.
+
+AVAILED ACCOMMODATION (what patient used): ${availedText}
+
+AVAILABLE ACCOMMODATION OPTIONS (id → name):
+${facilityOptions.map((f) => `  ${f.id}: ${f.text}`).join("
+")}
+
+BENEFIT PLAN ROOM CONDITIONS:
+${roomNotes || "(no room notes in benefit plan)"}
+${roomRows.length > 0 ? `Room details: ${JSON.stringify(roomRows)}` : ""}
+
+TARIFF ROOM RENT CAP: ${roomRentCap ?? "(not specified in tariff)"}
+
+HOSPITAL ROOM CHARGES: ${roomCharge ?? "(not found in bill summary)"}${days ? ` over ${days} days (≈ ₹${roomCharge ? Math.round(Number(String(roomCharge).replace(/[^\d]/g, "")) / days) : "unknown"}/day)` : ""}
+
+INSTRUCTIONS:
+1. Compare the availed accommodation with the benefit plan room conditions and tariff cap.
+2. If the availed room is within the eligible limit → approve the same room type.
+3. If the availed room exceeds the limit (e.g. private room but policy covers semi-private) → approve the highest eligible room type.
+4. If no room conditions are specified → approve same as availed.
+5. Return ONLY a JSON object with exactly this shape, no explanation:
+{"facilityId": "<id from options above>", "reason": "<one sentence reason>"}`;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 200,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (!response.ok) return availedId;
+
+      const data = await response.json() as {
+        content?: Array<{ type: string; text?: string }>;
+      };
+      const text = data.content?.find((b) => b.type === "text")?.text ?? "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return availedId;
+
+      const parsed = JSON.parse(jsonMatch[0]) as { facilityId?: string; reason?: string };
+      const recommendedId = parsed?.facilityId?.toString().trim();
+
+      // Validate the returned ID is in the options list
+      if (recommendedId && facilityOptions.some((f) => f.id === recommendedId)) {
+        console.log("[ClaimAI] Accommodation recommendation:", parsed.reason);
+        return recommendedId;
+      }
+      return availedId;
+    } catch (err) {
+      console.warn("[ClaimAI] determineApprovedAccommodation error:", err);
+      return spectraFields?.availedAccommodationId ?? null;
+    }
+  };
+
   const handleSave = async () => {
     if (!editedAnalysis || !selectedFileResult) return;
 
@@ -538,6 +666,16 @@ export function ResultView({
       });
 
       setEditedAnalysis(analysisToSave);
+
+      // Determine approved accommodation using AI analysis of benefit plan + tariff
+      // Then notify Spectra parent window to set Aprv Accommodation
+      const approvedFacilityId = await determineApprovedAccommodation();
+      if (approvedFacilityId && window.parent && window.parent !== window) {
+        window.parent.postMessage(
+          { source: "claimai", type: "setApprovedAccommodation", facilityId: approvedFacilityId },
+          "*",
+        );
+      }
 
       alert("Changes saved successfully!");
     } catch (error) {
