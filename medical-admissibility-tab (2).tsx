@@ -400,18 +400,17 @@ export function MedicalAdmissibilityTab({
         }
       }
 
-      // Always add a synthetic key so AI codes show even with no condition match
-      const AI_KEY = "__ai__";
-      presentConditions.add(AI_KEY);
+      // If no condition matched at all but we have AI codes, add the diagnosis
+      // as a fallback key so the ICD codes still appear in the table
+      if (presentConditions.size === 0 && (aiCode1 || aiCode2 || aiCode3)) {
+        const diagKey = diagnosisText.split(",")[0].trim() || "diagnosis";
+        presentConditions.add(diagKey);
+      }
 
       // Build icdCodeMap — AI code1 wins, then NLM fetch, then hardcoded
       const newIcdCodeMap = new Map<string, string>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
-          if (conditionKey === AI_KEY) {
-            if (aiCode1) newIcdCodeMap.set(conditionKey, aiCode1);
-            return;
-          }
           const rule = conditionRules.find((r) => r.key === conditionKey);
           const icdCode =
             aiCode1 ||
@@ -424,7 +423,7 @@ export function MedicalAdmissibilityTab({
       );
       setIcdCodeMap(newIcdCodeMap);
 
-      // Seed all 3 selectedICDCodes from AI codes for every condition key
+      // Seed all 3 selectedICDCodes from AI codes for every present condition key
       const newSelected1 = new Map(newIcdCodeMap);
       const newSelected2 = new Map<string, string>();
       const newSelected3 = new Map<string, string>();
@@ -437,18 +436,28 @@ export function MedicalAdmissibilityTab({
       setSelectedICDCodes2(newSelected2);
       setSelectedICDCodes3(newSelected3);
 
-      // Build dropdown options map
+      // Build dropdown options map — always include AI codes in the options
       const newOptionsMap = new Map<string, { code: string; description: string }[]>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
-          if (conditionKey === AI_KEY) return;
+          let options: { code: string; description: string }[] = [];
           if (conditionKey === "cataract") {
-            newOptionsMap.set(conditionKey, cataractICDCodes);
+            options = [...cataractICDCodes];
           } else {
             const rule = conditionRules.find((r) => r.key === conditionKey);
-            const options = await fetchICDOptions(rule?.label || conditionKey);
-            if (options.length) newOptionsMap.set(conditionKey, options);
+            options = await fetchICDOptions(rule?.label || conditionKey);
           }
+          // Ensure AI-extracted codes are always in the options list
+          for (const [aiCode, aiDesc] of [
+            [aiCode1, desc1],
+            [aiCode2, desc2],
+            [aiCode3, desc3],
+          ] as [string | null, string][]) {
+            if (aiCode && !options.some((o) => o.code === aiCode)) {
+              options = [{ code: aiCode, description: aiDesc || aiCode }, ...options];
+            }
+          }
+          if (options.length) newOptionsMap.set(conditionKey, options);
         })
       );
       setIcdOptionsMap(newOptionsMap);
@@ -575,58 +584,6 @@ export function MedicalAdmissibilityTab({
                   </div>
                 </div>
               )}
-              {/* Always-visible ICD Codes section — populated from AI extraction */}
-              {(selectedICDCodes.get("__ai__") || selectedICDCodes2.get("__ai__") || selectedICDCodes3.get("__ai__")) && (
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold text-gray-700">ICD Codes</div>
-                  <div className="rounded-md border bg-white">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>ICD Code-1</TableHead>
-                          <TableHead>ICD Code-2</TableHead>
-                          <TableHead>ICD Code-3</TableHead>
-                          <TableHead>Description</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <TableRow>
-                          <TableCell className="align-top">
-                            {renderICDDropdown(
-                              "__ai__",
-                              selectedICDCodes.get("__ai__") ?? "",
-                              (code) => handleICDCodeChange("__ai__", code),
-                              cataractICDCodes,
-                            )}
-                          </TableCell>
-                          <TableCell className="align-top">
-                            {renderICDDropdown(
-                              "__ai__",
-                              selectedICDCodes2.get("__ai__") ?? "",
-                              (code) => handleICDCode2Change("__ai__", code),
-                              cataractICDCodes,
-                            )}
-                          </TableCell>
-                          <TableCell className="align-top">
-                            {renderICDDropdown(
-                              "__ai__",
-                              selectedICDCodes3.get("__ai__") ?? "",
-                              (code) => handleICDCode3Change("__ai__", code),
-                              cataractICDCodes,
-                            )}
-                          </TableCell>
-                          <TableCell className="align-top">
-                            <span className="text-sm text-gray-700">
-                              {icdDescriptions.get(selectedICDCodes.get("__ai__") ?? "") || "-"}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
               {conditionRows.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-sm font-semibold text-gray-700">
