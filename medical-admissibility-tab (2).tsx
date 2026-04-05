@@ -369,20 +369,19 @@ export function MedicalAdmissibilityTab({
       const aiCode2 = (medicalAdmissibility as { icdCode2?: string })?.icdCode2?.trim() || null;
       const aiCode3 = (medicalAdmissibility as { icdCode3?: string })?.icdCode3?.trim() || null;
 
-      // Fetch descriptions for all 3 AI codes in parallel
+      // Fetch descriptions for all 3 AI codes in parallel immediately
       const [desc1, desc2, desc3] = await Promise.all([
         aiCode1 ? fetchICDDescription(aiCode1) : Promise.resolve(""),
         aiCode2 ? fetchICDDescription(aiCode2) : Promise.resolve(""),
         aiCode3 ? fetchICDDescription(aiCode3) : Promise.resolve(""),
       ]);
-
       const newDescMap = new Map<string, string>();
       if (aiCode1) newDescMap.set(aiCode1, desc1);
       if (aiCode2) newDescMap.set(aiCode2, desc2);
       if (aiCode3) newDescMap.set(aiCode3, desc3);
       setIcdDescriptions(newDescMap);
 
-      // Find which conditions are present (for conditionRows)
+      // Find which conditions are present
       const presentConditions = new Set<string>();
       for (const rule of conditionRules) {
         const aiCondition = conditionTests.find((condition) =>
@@ -401,12 +400,19 @@ export function MedicalAdmissibilityTab({
         }
       }
 
-      // Build icdCodeMap for conditionRows
+      // Always add a synthetic key so AI codes show even with no condition match
+      const AI_KEY = "__ai__";
+      presentConditions.add(AI_KEY);
+
+      // Build icdCodeMap — AI code1 wins, then NLM fetch, then hardcoded
       const newIcdCodeMap = new Map<string, string>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
+          if (conditionKey === AI_KEY) {
+            if (aiCode1) newIcdCodeMap.set(conditionKey, aiCode1);
+            return;
+          }
           const rule = conditionRules.find((r) => r.key === conditionKey);
-          // Use AI code1 if available, else NLM fetch, else hardcoded fallback
           const icdCode =
             aiCode1 ||
             (await fetchICDCode(rule?.label || conditionKey)) ||
@@ -418,15 +424,16 @@ export function MedicalAdmissibilityTab({
       );
       setIcdCodeMap(newIcdCodeMap);
 
-      // Always seed selectedICDCodes from AI codes
+      // Seed all 3 selectedICDCodes from AI codes for every condition key
       const newSelected1 = new Map(newIcdCodeMap);
-      if (aiCode1) Array.from(presentConditions).forEach((k) => newSelected1.set(k, aiCode1));
-      setSelectedICDCodes(newSelected1);
-
       const newSelected2 = new Map<string, string>();
       const newSelected3 = new Map<string, string>();
-      if (aiCode2) Array.from(presentConditions).forEach((k) => newSelected2.set(k, aiCode2));
-      if (aiCode3) Array.from(presentConditions).forEach((k) => newSelected3.set(k, aiCode3));
+      Array.from(presentConditions).forEach((k) => {
+        if (aiCode1) newSelected1.set(k, aiCode1);
+        if (aiCode2) newSelected2.set(k, aiCode2);
+        if (aiCode3) newSelected3.set(k, aiCode3);
+      });
+      setSelectedICDCodes(newSelected1);
       setSelectedICDCodes2(newSelected2);
       setSelectedICDCodes3(newSelected3);
 
@@ -434,6 +441,7 @@ export function MedicalAdmissibilityTab({
       const newOptionsMap = new Map<string, { code: string; description: string }[]>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
+          if (conditionKey === AI_KEY) return;
           if (conditionKey === "cataract") {
             newOptionsMap.set(conditionKey, cataractICDCodes);
           } else {
@@ -567,6 +575,58 @@ export function MedicalAdmissibilityTab({
                   </div>
                 </div>
               )}
+              {/* Always-visible ICD Codes section — populated from AI extraction */}
+              {(selectedICDCodes.get("__ai__") || selectedICDCodes2.get("__ai__") || selectedICDCodes3.get("__ai__")) && (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold text-gray-700">ICD Codes</div>
+                  <div className="rounded-md border bg-white">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ICD Code-1</TableHead>
+                          <TableHead>ICD Code-2</TableHead>
+                          <TableHead>ICD Code-3</TableHead>
+                          <TableHead>Description</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell className="align-top">
+                            {renderICDDropdown(
+                              "__ai__",
+                              selectedICDCodes.get("__ai__") ?? "",
+                              (code) => handleICDCodeChange("__ai__", code),
+                              cataractICDCodes,
+                            )}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            {renderICDDropdown(
+                              "__ai__",
+                              selectedICDCodes2.get("__ai__") ?? "",
+                              (code) => handleICDCode2Change("__ai__", code),
+                              cataractICDCodes,
+                            )}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            {renderICDDropdown(
+                              "__ai__",
+                              selectedICDCodes3.get("__ai__") ?? "",
+                              (code) => handleICDCode3Change("__ai__", code),
+                              cataractICDCodes,
+                            )}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <span className="text-sm text-gray-700">
+                              {icdDescriptions.get(selectedICDCodes.get("__ai__") ?? "") || "-"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
               {conditionRows.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-sm font-semibold text-gray-700">
