@@ -182,26 +182,6 @@ export function ResultView({
   // when analysis loads so it's ready instantly when Save is clicked
   const approvedAccommodationRef = useRef<string | null>(null);
 
-  // Run accommodation determination in background as soon as data is available
-  // so the result is ready by the time Save is clicked (no delay on save)
-  useEffect(() => {
-    approvedAccommodationRef.current = null;
-    if (!spectraFields?.availedAccommodationId || !spectraFields?.facilityOptions?.length) return;
-    if (!displayAnalysis) return;
-
-    let cancelled = false;
-    const run = async () => {
-      const result = await determineApprovedAccommodation();
-      if (!cancelled) {
-        approvedAccommodationRef.current = result;
-        console.log("[ClaimAI] Accommodation pre-computed:", result);
-      }
-    };
-    void run();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spectraFields?.availedAccommodationId, displayAnalysis]);
-
   // Helper to trigger re-render when changelog updates
   const updateChangeLog = () => {
     setChangeLogVersion((v) => v + 1);
@@ -619,6 +599,27 @@ export function ResultView({
       return spectraFields?.availedAccommodationId ?? null;
     }
   };
+
+  // Run accommodation determination in background as soon as data is available
+  // so the result is ready by the time Save is clicked (no delay on save)
+  // Placed here — after displayAnalysis and determineApprovedAccommodation are defined
+  useEffect(() => {
+    approvedAccommodationRef.current = null;
+    if (!spectraFields?.availedAccommodationId || !spectraFields?.facilityOptions?.length) return;
+    if (!displayAnalysis) return;
+
+    let cancelled = false;
+    const run = async () => {
+      const result = await determineApprovedAccommodation();
+      if (!cancelled) {
+        approvedAccommodationRef.current = result;
+        console.log("[ClaimAI] Accommodation pre-computed:", result);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spectraFields?.availedAccommodationId, displayAnalysis]);
 
   const handleSave = async () => {
     if (!editedAnalysis || !selectedFileResult) return;
