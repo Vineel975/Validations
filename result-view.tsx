@@ -469,11 +469,33 @@ export function ResultView({
   // ── Determine approved accommodation using AI ────────────────────────────────
   // Fetches benefit plan room rules + uses tariff/bill context to ask Claude
   // which facility option best matches what the patient is eligible for.
+  // Sends the approved accommodation to Spectra parent via postMessage.
+  // Called immediately on Save click — does not depend on Convex save succeeding.
+  const sendAccommodationToSpectra = () => {
+    const facilityId =
+      approvedAccommodationRef.current ?? (spectraFields?.availedAccommodationId as string | undefined) ?? null;
+    console.log("[ClaimAI][Accomm] sendAccommodationToSpectra — facilityId:", facilityId, "inIframe:", window.parent !== window);
+    if (!facilityId) {
+      console.warn("[ClaimAI][Accomm] No facilityId available");
+      return;
+    }
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { source: "claimai", type: "setApprovedAccommodation", facilityId },
+        "*",
+      );
+      console.log("[ClaimAI][Accomm] postMessage sent:", facilityId);
+    } else {
+      console.warn("[ClaimAI][Accomm] Not in iframe — postMessage skipped");
+    }
+  };
+
   const determineApprovedAccommodation = async (): Promise<string | null> => {
     try {
       const claimId = state?.claimId?.trim();
-      const facilityOptions = spectraFields?.facilityOptions ?? [];
-      const availedId = spectraFields?.availedAccommodationId;
+      const facilityOptions = (spectraFields?.facilityOptions as Array<{ id: string; text: string }> | undefined) ?? [];
+      const availedId = spectraFields?.availedAccommodationId as string | undefined;
+      console.log("[ClaimAI][Accomm] determineApprovedAccommodation — claimId:", claimId, "availedId:", availedId, "facilityOptions:", facilityOptions);
       if (!claimId || !facilityOptions.length || !availedId) return availedId ?? null;
 
       // Find availed room text
@@ -604,16 +626,25 @@ export function ResultView({
   // so the result is ready by the time Save is clicked (no delay on save)
   // Placed here — after displayAnalysis and determineApprovedAccommodation are defined
   useEffect(() => {
+    console.log("[ClaimAI][Accomm] useEffect fired. availedId:", spectraFields?.availedAccommodationId, "facilityOptions:", spectraFields?.facilityOptions?.length, "displayAnalysis:", !!displayAnalysis);
     approvedAccommodationRef.current = null;
-    if (!spectraFields?.availedAccommodationId || !spectraFields?.facilityOptions?.length) return;
-    if (!displayAnalysis) return;
+    if (!spectraFields?.availedAccommodationId || !spectraFields?.facilityOptions?.length) {
+      console.log("[ClaimAI][Accomm] Skipping — missing availedAccommodationId or facilityOptions");
+      return;
+    }
+    if (!displayAnalysis) {
+      console.log("[ClaimAI][Accomm] Skipping — no displayAnalysis");
+      return;
+    }
 
     let cancelled = false;
     const run = async () => {
+      console.log("[ClaimAI][Accomm] Starting determination...");
       const result = await determineApprovedAccommodation();
+      console.log("[ClaimAI][Accomm] Result:", result);
       if (!cancelled) {
         approvedAccommodationRef.current = result;
-        console.log("[ClaimAI] Accommodation pre-computed:", result);
+        console.log("[ClaimAI][Accomm] Stored in ref:", approvedAccommodationRef.current);
       }
     };
     void run();
@@ -702,17 +733,6 @@ export function ResultView({
       });
 
       setEditedAnalysis(analysisToSave);
-
-      // Notify Spectra parent window to set Aprv Accommodation
-      // Use pre-computed result from background effect; fall back to availed if not ready
-      const approvedFacilityId =
-        approvedAccommodationRef.current ?? spectraFields?.availedAccommodationId ?? null;
-      if (approvedFacilityId && window.parent && window.parent !== window) {
-        window.parent.postMessage(
-          { source: "claimai", type: "setApprovedAccommodation", facilityId: approvedFacilityId },
-          "*",
-        );
-      }
 
       alert("Changes saved successfully!");
     } catch (error) {
@@ -941,12 +961,19 @@ export function ResultView({
                 </section>
                 <div className="mt-6 border-t border-border/80 py-4">
                   <SaveDropdown
-                    onSave={handleSave}
+                    onSave={() => {
+                      sendAccommodationToSpectra();
+                      handleSave();
+                    }}
                     onSaveAndRaiseQuery={() => {
+                      sendAccommodationToSpectra();
                       handleSave();
                       setIsQueryDialogOpen(true);
                     }}
-                    onDontSaveAndRaiseQuery={() => setIsQueryDialogOpen(true)}
+                    onDontSaveAndRaiseQuery={() => {
+                      sendAccommodationToSpectra();
+                      setIsQueryDialogOpen(true);
+                    }}
                     isSaving={isSaving}
                   />
                 </div>
