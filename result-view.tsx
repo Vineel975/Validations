@@ -496,17 +496,12 @@ export function ResultView({
     }
 
     // ── Clinical / Treatment Details ─────────────────────────────────────────
-    const diagnosis   = displayAnalysis?.medicalAdmissibility?.diagnosis   ?? null;
-    const doctorNotes = displayAnalysis?.medicalAdmissibility?.doctorNotes ?? null;
+    // Diagnosis → txtProbableLineOfTreatment (Treatment Details field)
+    const diagnosis = displayAnalysis?.medicalAdmissibility?.diagnosis ?? null;
 
-    if (diagnosis || doctorNotes) {
+    if (diagnosis) {
       window.parent.postMessage(
-        {
-          source:      "claimai",
-          type:        "setClinicalDetails",
-          diagnosis:   diagnosis   ?? "",
-          doctorNotes: doctorNotes ?? "",
-        },
+        { source: "claimai", type: "setClinicalDetails", diagnosis },
         "*",
       );
     }
