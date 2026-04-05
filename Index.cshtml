@@ -8470,15 +8470,25 @@
             // Listen for postMessage from ClaimAI iframe — sets Aprv Accommodation on Save
             window.addEventListener('message', function(event) {
                 if (!event.data || event.data.source !== 'claimai') return;
+
                 if (event.data.type === 'setApprovedAccommodation') {
+                    // AI determined a specific facility ID — set it directly
                     var facilityId = event.data.facilityId;
                     if (facilityId) {
                         var $ddl = $('#ddlApprovedFacility');
                         if ($ddl.find('option[value="' + facilityId + '"]').length > 0) {
                             $ddl.val(facilityId).trigger('change');
-                            console.log('[ClaimAI] Set Aprv Accommodation to facilityId:', facilityId);
-                        } else {
-                            console.warn('[ClaimAI] facilityId not found in dropdown:', facilityId);
+                        }
+                    }
+                }
+
+                if (event.data.type === 'copyAvailedToApproved') {
+                    // No spectraFields available — copy availed to approved using DOM values
+                    var availedVal = $('#ddlReceivedAccomodation').val();
+                    if (availedVal) {
+                        var $aprvDdl = $('#ddlApprovedFacility');
+                        if ($aprvDdl.find('option[value="' + availedVal + '"]').length > 0) {
+                            $aprvDdl.val(availedVal).trigger('change');
                         }
                     }
                 }
