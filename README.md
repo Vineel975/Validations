@@ -1,3 +1,8 @@
+$('#tab5').find('input, textarea, select').each(function() {
+  if($(this).attr('id')) console.log($(this).attr('id'), '=', $(this).val() || $(this).text());
+});
+Share the output and I'll implement it immediately.
+
 ✖ Schema validation failed.
 Document with ID "jh77zzzz9ewfx8nj2hewqk6zrn845wqe" in table "processJob" does not match the schema: Object contains extra field `spectraFields` that is not in the validator.
 
