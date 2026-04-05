@@ -15,16 +15,9 @@ export default defineSchema({
     isComplete: v.boolean(),
     error: v.optional(v.string()),
     claimId: v.optional(v.string()),
-    spectraFields: v.optional(v.object({
-      patientName:   v.optional(v.string()),
-      patientAge:    v.optional(v.string()),
-      patientGender: v.optional(v.string()),
-      policyNumber:  v.optional(v.string()),
-      hospitalName:  v.optional(v.string()),
-      admissionDate: v.optional(v.string()),
-      dischargeDate: v.optional(v.string()),
-      documentDate:  v.optional(v.string()),
-    })),
+    // Kept optional to allow old documents that have this field to pass validation.
+    // Not used by any code — safe to leave here permanently.
+    spectraFields: v.optional(v.any()),
   })
     .index("by_status", ["status"])
     .index("by_isComplete", ["isComplete"]),
