@@ -103,16 +103,7 @@ export const createJobWithFiles = mutation({
     hospitalFileName: v.string(),
     tariffStorageId: v.optional(v.id("_storage")),
     tariffFileName: v.optional(v.string()),
-    spectraFields: v.optional(v.object({
-      patientName:   v.optional(v.string()),
-      patientAge:    v.optional(v.string()),
-      patientGender: v.optional(v.string()),
-      policyNumber:  v.optional(v.string()),
-      hospitalName:  v.optional(v.string()),
-      admissionDate: v.optional(v.string()),
-      dischargeDate: v.optional(v.string()),
-      documentDate:  v.optional(v.string()),
-    })),
+    spectraFields: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const jobId = await ctx.db.insert("processJob", {
