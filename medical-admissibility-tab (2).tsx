@@ -124,22 +124,18 @@ function matchesConditionName(
  */
 async function fetchICDCode(condition: string): Promise<string | undefined> {
   try {
-    const baseCondition = condition.split("(")[0].trim();
-    const searchTerm = baseCondition.toLowerCase();
-    const response = await fetch(
-      `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(searchTerm)}&maxList=15`
-    );
-    const result = await response.json();
-    if (result && Array.isArray(result) && result.length >= 2 && result[1].length > 0) {
-      if (searchTerm.includes("cataract")) {
-        const ageRelatedIndex = result[1].findIndex((code: string) => code.startsWith("H25"));
-        if (ageRelatedIndex !== -1) return result[1][ageRelatedIndex];
-      }
-      return result[1][0];
+    const term = condition.split("(")[0].trim().toLowerCase();
+    const res = await fetch(`/api/icd?condition=${encodeURIComponent(term)}`);
+    if (!res.ok) return undefined;
+    const data = await res.json() as { codes?: { code: string; description: string }[] };
+    const codes = data.codes ?? [];
+    if (!codes.length) return undefined;
+    if (term.includes("cataract")) {
+      const h25 = codes.find((c) => c.code.startsWith("H25"));
+      if (h25) return h25.code;
     }
-    return undefined;
-  } catch (error) {
-    console.error(`Error fetching ICD code for ${condition}:`, error);
+    return codes[0].code;
+  } catch {
     return undefined;
   }
 }
@@ -147,43 +143,26 @@ async function fetchICDCode(condition: string): Promise<string | undefined> {
 /** Fetches multiple ICD code options for a condition — used to populate dropdowns */
 async function fetchICDOptions(condition: string): Promise<{ code: string; description: string }[]> {
   try {
-    const searchTerm = condition.split("(")[0].trim().toLowerCase();
-    const response = await fetch(
-      `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(searchTerm)}&maxList=10`
-    );
-    const result = await response.json();
-    // result[1] = [codes], result[3] = [[code, name], ...]
-    if (result && Array.isArray(result) && result[1]?.length > 0) {
-      return (result[1] as string[]).map((code: string, i: number) => {
-        const namePair = result[3]?.[i];
-        const description = Array.isArray(namePair) ? (namePair[1] ?? code) : code;
-        return { code, description };
-      });
-    }
-    return [];
+    const term = condition.split("(")[0].trim().toLowerCase();
+    const res = await fetch(`/api/icd?condition=${encodeURIComponent(term)}`);
+    if (!res.ok) return [];
+    const data = await res.json() as { codes?: { code: string; description: string }[] };
+    return data.codes ?? [];
   } catch {
     return [];
   }
 }
 
-/** Fetches the description for a specific ICD-10 code from NLM */
+/** Fetches the description for a specific ICD-10 code from NLM via proxy */
 async function fetchICDDescription(code: string): Promise<string> {
   if (!code) return "";
   try {
-    const response = await fetch(
-      `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(code)}&maxList=5`
-    );
-    const result = await response.json();
-    if (result && Array.isArray(result) && result[1]?.length > 0) {
-      // Find exact code match
-      const exactIdx = (result[1] as string[]).findIndex(
-        (c: string) => c.toLowerCase() === code.toLowerCase()
-      );
-      const idx = exactIdx !== -1 ? exactIdx : 0;
-      const namePair = result[3]?.[idx];
-      return Array.isArray(namePair) ? (namePair[1] ?? "") : "";
-    }
-    return "";
+    const res = await fetch(`/api/icd?code=${encodeURIComponent(code)}`);
+    if (!res.ok) return "";
+    const data = await res.json() as { codes?: { code: string; description: string }[] };
+    const codes = data.codes ?? [];
+    const exact = codes.find((c) => c.code.toLowerCase() === code.toLowerCase());
+    return exact?.description ?? codes[0]?.description ?? "";
   } catch {
     return "";
   }
