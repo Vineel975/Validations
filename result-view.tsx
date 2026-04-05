@@ -466,6 +466,106 @@ export function ResultView({
     claimCalculation?.finalInsurerPayableNotes ||
     displayAnalysis?.finalInsurerPayableNotes;
 
+  // ── Build pre-populated query message from validation failures ───────────────
+  // Collects all field mismatches and missing investigation reports,
+  // formats them as a structured query message.
+  const buildQueryMessage = (): { type: string; message: string } => {
+    const lines: string[] = [];
+
+    // 1. Field validation mismatches from patientInfoDb sections
+    if (displayAnalysis?.patientInfoDb?.sections?.length) {
+      const allRows = displayAnalysis.patientInfoDb.sections.flatMap((s) => s.rows);
+
+      const normalizeVal = (v: string | number | boolean | null | undefined): string =>
+        String(v ?? "").trim();
+
+      const normalizeDate = (s: string): string => {
+        const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (iso) return iso[1];
+        const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
+        return s;
+      };
+
+      const normalizeGender = (s: string): string => {
+        const g = s.toLowerCase();
+        if (g === "1" || g === "f" || g === "female") return "female";
+        if (g === "2" || g === "m" || g === "male")   return "male";
+        return g;
+      };
+
+      const fieldChecks: Array<{
+        label: string;
+        aiValue: string | null | undefined;
+        aliases: string[];
+        normalize?: (s: string) => string;
+      }> = [
+        { label: "Patient Name",    aiValue: displayAnalysis.patientName?.value as string,    aliases: ["membername","patientname","name"] },
+        { label: "Patient Age",     aiValue: String(displayAnalysis.patientAge?.value ?? ""), aliases: ["age","patientage"] },
+        { label: "Gender",          aiValue: displayAnalysis.patientGender?.value as string,  aliases: ["gender","genderid"], normalize: normalizeGender },
+        { label: "Policy Number",   aiValue: displayAnalysis.policyNumber?.value as string,   aliases: ["uhidno","uhid","patientuhid","policyno","policynumber"] },
+        { label: "Hospital Name",   aiValue: displayAnalysis.hospitalName?.value as string,   aliases: ["hospitalname","providername","name"] },
+        { label: "Admission Date",  aiValue: displayAnalysis.admissionDate?.value as string,  aliases: ["dateofadmission","doa","admissiondate"], normalize: normalizeDate },
+        { label: "Document Date",   aiValue: displayAnalysis.date?.value as string,           aliases: ["dateofbill","documentdate","billdate","date","createddate"] , normalize: normalizeDate },
+      ];
+
+      const normalizeKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      for (const check of fieldChecks) {
+        if (!check.aiValue) continue;
+        const norm = check.normalize ?? ((s: string) => s.trim().toLowerCase().replace(/\s+/g," "));
+        const aiNorm = norm(check.aiValue);
+        if (!aiNorm) continue;
+
+        // Find DB value using aliases
+        let dbVal: string | null = null;
+        for (const alias of check.aliases) {
+          for (const row of allRows) {
+            for (const [k, v] of Object.entries(row)) {
+              if (normalizeKey(k) === alias && v !== null && v !== undefined && String(v).trim()) {
+                dbVal = String(v).trim();
+                break;
+              }
+            }
+            if (dbVal) break;
+          }
+          if (dbVal) break;
+        }
+
+        if (!dbVal) continue;
+        const dbNorm = norm(dbVal);
+        if (aiNorm !== dbNorm) {
+          lines.push(`• ${check.label}: "${check.aiValue}" in medical bill vs "${dbVal}" in Spectra DB`);
+        }
+      }
+    }
+
+    // 2. Missing investigation reports from conditionTests
+    const conditionTests = (
+      displayAnalysis?.medicalAdmissibility as
+        | { conditionTests?: Array<{ testName: string; status: string }> }
+        | null | undefined
+    )?.conditionTests ?? [];
+
+    const missingTests = conditionTests.filter((t) => t.status === "missing");
+    for (const t of missingTests) {
+      lines.push(`• ${t.testName} report is missing in the provided medical documents`);
+    }
+
+    if (!lines.length) return { type: "", message: "" };
+
+    const message = "The following discrepancies/issues were found during claim review:
+
+"
+      + lines.join("
+")
+      + "
+
+Please provide clarification or submit the correct documents.";
+
+    return { type: "billing", message };
+  };
+
   // ── Determine approved accommodation using AI ────────────────────────────────
   // Fetches benefit plan room rules + uses tariff/bill context to ask Claude
   // which facility option best matches what the patient is eligible for.
@@ -977,10 +1077,16 @@ export function ResultView({
                     onSaveAndRaiseQuery={() => {
                       sendAccommodationToSpectra();
                       handleSave();
+                      const q = buildQueryMessage();
+                      if (q.type) setQueryType(q.type);
+                      if (q.message) setQueryMessage(q.message);
                       setIsQueryDialogOpen(true);
                     }}
                     onDontSaveAndRaiseQuery={() => {
                       sendAccommodationToSpectra();
+                      const q = buildQueryMessage();
+                      if (q.type) setQueryType(q.type);
+                      if (q.message) setQueryMessage(q.message);
                       setIsQueryDialogOpen(true);
                     }}
                     isSaving={isSaving}
