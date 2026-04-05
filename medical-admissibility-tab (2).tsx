@@ -166,6 +166,29 @@ async function fetchICDOptions(condition: string): Promise<{ code: string; descr
   }
 }
 
+/** Fetches the description for a specific ICD-10 code from NLM */
+async function fetchICDDescription(code: string): Promise<string> {
+  if (!code) return "";
+  try {
+    const response = await fetch(
+      `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(code)}&maxList=5`
+    );
+    const result = await response.json();
+    if (result && Array.isArray(result) && result[1]?.length > 0) {
+      // Find exact code match
+      const exactIdx = (result[1] as string[]).findIndex(
+        (c: string) => c.toLowerCase() === code.toLowerCase()
+      );
+      const idx = exactIdx !== -1 ? exactIdx : 0;
+      const namePair = result[3]?.[idx];
+      return Array.isArray(namePair) ? (namePair[1] ?? "") : "";
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
 const conditionRules: ConditionRule[] = [
   {
     key: "cataract",
@@ -328,23 +351,38 @@ export function MedicalAdmissibilityTab({
   const [selectedICDCodes3, setSelectedICDCodes3] = useState<Map<string, string>>(new Map());
   // conditionKey -> array of {code, description} options fetched from NLM
   const [icdOptionsMap, setIcdOptionsMap] = useState<Map<string, { code: string; description: string }[]>>(new Map());
+  // Store descriptions for AI-extracted codes (code -> description)
+  const [icdDescriptions, setIcdDescriptions] = useState<Map<string, string>>(new Map());
 
   // Fetch ICD codes for conditions that appear in the data
   useEffect(() => {
     const fetchICDCodes = async () => {
       if (!medicalAdmissibility) return;
 
-      const diagnosisText = (
-        medicalAdmissibility.diagnosis || ""
-      ).toLowerCase();
+      const diagnosisText = (medicalAdmissibility.diagnosis || "").toLowerCase();
       const conditionTests =
-        (medicalAdmissibility as { conditionTests?: ConditionTestCheck[] })
-          .conditionTests || [];
-
-      const newIcdCodeMap = new Map<string, string>();
+        (medicalAdmissibility as { conditionTests?: ConditionTestCheck[] }).conditionTests || [];
       const fallbackCataractIcd = inferDefaultCataractIcdCode(medicalAdmissibility);
 
-      // Find which hardcoded-rule conditions are present
+      // AI-extracted ICD codes — primary source
+      const aiCode1 = (medicalAdmissibility as { icdCode1?: string })?.icdCode1?.trim() || null;
+      const aiCode2 = (medicalAdmissibility as { icdCode2?: string })?.icdCode2?.trim() || null;
+      const aiCode3 = (medicalAdmissibility as { icdCode3?: string })?.icdCode3?.trim() || null;
+
+      // Fetch descriptions for all 3 AI codes in parallel
+      const [desc1, desc2, desc3] = await Promise.all([
+        aiCode1 ? fetchICDDescription(aiCode1) : Promise.resolve(""),
+        aiCode2 ? fetchICDDescription(aiCode2) : Promise.resolve(""),
+        aiCode3 ? fetchICDDescription(aiCode3) : Promise.resolve(""),
+      ]);
+
+      const newDescMap = new Map<string, string>();
+      if (aiCode1) newDescMap.set(aiCode1, desc1);
+      if (aiCode2) newDescMap.set(aiCode2, desc2);
+      if (aiCode3) newDescMap.set(aiCode3, desc3);
+      setIcdDescriptions(newDescMap);
+
+      // Find which conditions are present (for conditionRows)
       const presentConditions = new Set<string>();
       for (const rule of conditionRules) {
         const aiCondition = conditionTests.find((condition) =>
@@ -353,80 +391,59 @@ export function MedicalAdmissibilityTab({
         const matchedByDiagnosis = rule.diagnosisKeywords.some((keyword) =>
           diagnosisText.includes(keyword)
         );
-        if (aiCondition || matchedByDiagnosis) {
-          presentConditions.add(rule.key);
-        }
+        if (aiCondition || matchedByDiagnosis) presentConditions.add(rule.key);
       }
-
-      // Also fetch ICD for any AI-extracted conditions not in conditionRules
       for (const ct of conditionTests) {
-        const matchesRule = conditionRules.some((r) =>
-          matchesConditionName(ct.condition, r)
-        );
+        const matchesRule = conditionRules.some((r) => matchesConditionName(ct.condition, r));
         if (!matchesRule) {
           const key = (ct.condition || ct.matchedDiagnosis || "").toLowerCase().trim();
           if (key) presentConditions.add(key);
         }
       }
 
-      // AI-extracted ICD codes — use as primary source for all 3 levels
-      const aiCode1 = (medicalAdmissibility as { icdCode1?: string })?.icdCode1?.trim() || null;
-      const aiCode2 = (medicalAdmissibility as { icdCode2?: string })?.icdCode2?.trim() || null;
-      const aiCode3 = (medicalAdmissibility as { icdCode3?: string })?.icdCode3?.trim() || null;
-
-      // Fetch ICD codes for present conditions
-      // Priority: AI-extracted code1 > NLM API fetch > hardcoded fallback
+      // Build icdCodeMap for conditionRows
+      const newIcdCodeMap = new Map<string, string>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
           const rule = conditionRules.find((r) => r.key === conditionKey);
-          const searchLabel = rule?.label || conditionKey;
-
-          // Use AI-extracted code1 if available, else fetch from NLM
-          let icdCode = aiCode1 || null;
-          if (!icdCode) {
-            const fetchedIcdCode = await fetchICDCode(searchLabel);
-            icdCode =
-              fetchedIcdCode ||
-              (rule?.key === "cataract" ? fallbackCataractIcd : undefined) ||
-              rule?.icdCode ||
-              null;
-          }
-
-          if (icdCode) {
-            newIcdCodeMap.set(conditionKey, icdCode);
-          }
+          // Use AI code1 if available, else NLM fetch, else hardcoded fallback
+          const icdCode =
+            aiCode1 ||
+            (await fetchICDCode(rule?.label || conditionKey)) ||
+            (rule?.key === "cataract" ? fallbackCataractIcd : undefined) ||
+            rule?.icdCode ||
+            null;
+          if (icdCode) newIcdCodeMap.set(conditionKey, icdCode);
         })
       );
-
-      // Initialize with best available defaults so ICD is never blank at start.
       setIcdCodeMap(newIcdCodeMap);
-      setSelectedICDCodes(new Map(newIcdCodeMap));
 
-      // Fetch dropdown options for all present conditions and seed codes 2 & 3
+      // Always seed selectedICDCodes from AI codes
+      const newSelected1 = new Map(newIcdCodeMap);
+      if (aiCode1) Array.from(presentConditions).forEach((k) => newSelected1.set(k, aiCode1));
+      setSelectedICDCodes(newSelected1);
+
+      const newSelected2 = new Map<string, string>();
+      const newSelected3 = new Map<string, string>();
+      if (aiCode2) Array.from(presentConditions).forEach((k) => newSelected2.set(k, aiCode2));
+      if (aiCode3) Array.from(presentConditions).forEach((k) => newSelected3.set(k, aiCode3));
+      setSelectedICDCodes2(newSelected2);
+      setSelectedICDCodes3(newSelected3);
+
+      // Build dropdown options map
       const newOptionsMap = new Map<string, { code: string; description: string }[]>();
-      const newSelectedCodes2 = new Map<string, string>();
-      const newSelectedCodes3 = new Map<string, string>();
-
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
-          const rule = conditionRules.find((r) => r.key === conditionKey);
-          // For cataract use the existing hardcoded list, others fetch from API
           if (conditionKey === "cataract") {
             newOptionsMap.set(conditionKey, cataractICDCodes);
           } else {
-            const searchLabel = rule?.label || conditionKey;
-            const options = await fetchICDOptions(searchLabel);
+            const rule = conditionRules.find((r) => r.key === conditionKey);
+            const options = await fetchICDOptions(rule?.label || conditionKey);
             if (options.length) newOptionsMap.set(conditionKey, options);
           }
-          // Seed code-2 and code-3 from AI-extracted fields
-          if (aiCode2) newSelectedCodes2.set(conditionKey, aiCode2);
-          if (aiCode3) newSelectedCodes3.set(conditionKey, aiCode3);
         })
       );
-
       setIcdOptionsMap(newOptionsMap);
-      setSelectedICDCodes2(newSelectedCodes2);
-      setSelectedICDCodes3(newSelectedCodes3);
     };
 
     fetchICDCodes();
@@ -625,12 +642,18 @@ export function MedicalAdmissibilityTab({
                                 row.conditionKey === "cataract" ? cataractICDCodes : undefined,
                               )}
                             </TableCell>
-                            {/* ICD Description — from selected Code-1 */}
+                            {/* ICD Description — from fetched description for Code-1 */}
                             <TableCell className="align-top">
                               <span className="text-sm text-gray-700">
-                                {(icdOptionsMap.get(row.conditionKey!) ?? cataractICDCodes).find(
-                                  (icd) => icd.code === getDisplayICDCode(row.conditionKey!, row.icdCode)
-                                )?.description || "-"}
+                                {(() => {
+                                  const code1 = getDisplayICDCode(row.conditionKey!, row.icdCode) ?? "";
+                                  // Try icdDescriptions map first (fetched for AI codes)
+                                  if (code1 && icdDescriptions.get(code1)) return icdDescriptions.get(code1);
+                                  // Fall back to options map lookup
+                                  return (icdOptionsMap.get(row.conditionKey!) ?? cataractICDCodes).find(
+                                    (icd) => icd.code === code1
+                                  )?.description || "-";
+                                })()}
                               </span>
                             </TableCell>
                             <TableCell
