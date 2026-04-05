@@ -469,19 +469,15 @@ export function ResultView({
   // ── Determine approved accommodation using AI ────────────────────────────────
   // Fetches benefit plan room rules + uses tariff/bill context to ask Claude
   // which facility option best matches what the patient is eligible for.
-  // Sends the approved accommodation to Spectra parent via postMessage.
-  // Called immediately on Save click — does not depend on Convex save succeeding.
+  // Sends data to Spectra parent via postMessage on Save click.
+  // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
   const sendAccommodationToSpectra = () => {
     if (!(window.parent && window.parent !== window)) {
       // Not running inside an iframe — nothing to do
       return;
     }
 
-    // If AI determined a specific facility ID, send it.
-    // If spectraFields has the availed ID, send that.
-    // If neither is available (e.g. job was created locally, not via Spectra),
-    // send a "copyFromAvailed" signal so Spectra copies ddlReceivedAccomodation
-    // → ddlApprovedFacility using its own existing logic.
+    // ── Approved Accommodation ───────────────────────────────────────────────
     const facilityId =
       approvedAccommodationRef.current ??
       (spectraFields?.availedAccommodationId as string | undefined) ??
@@ -493,9 +489,24 @@ export function ResultView({
         "*",
       );
     } else {
-      // Tell Spectra to copy availed → approved using its own DOM values
       window.parent.postMessage(
         { source: "claimai", type: "copyAvailedToApproved" },
+        "*",
+      );
+    }
+
+    // ── Clinical / Treatment Details ─────────────────────────────────────────
+    const diagnosis   = displayAnalysis?.medicalAdmissibility?.diagnosis   ?? null;
+    const doctorNotes = displayAnalysis?.medicalAdmissibility?.doctorNotes ?? null;
+
+    if (diagnosis || doctorNotes) {
+      window.parent.postMessage(
+        {
+          source:      "claimai",
+          type:        "setClinicalDetails",
+          diagnosis:   diagnosis   ?? "",
+          doctorNotes: doctorNotes ?? "",
+        },
         "*",
       );
     }
