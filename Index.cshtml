@@ -8496,7 +8496,6 @@
                 if (event.data.type === 'setClinicalDetails') {
                     var diagnosis       = event.data.diagnosis       || '';
                     var lineOfTreatment = event.data.lineOfTreatment || '';
-                    var doctorNotes     = event.data.doctorNotes     || '';
 
                     // Probable Diagnosis → txtProbableDiagnosis
                     if (diagnosis) {
@@ -8513,14 +8512,6 @@
                         var $treatment = $('#txtProbableLineOfTreatment');
                         if (!$treatment.val() || $treatment.val().trim() === '') {
                             $treatment.val(treatmentValue).trigger('change');
-                        }
-                    }
-
-                    // Presenting Complaint → txtPresentComplaint
-                    if (doctorNotes) {
-                        var $complaint = $('#txtPresentComplaint');
-                        if (!$complaint.val() || $complaint.val().trim() === '') {
-                            $complaint.val(doctorNotes).trigger('change');
                         }
                     }
                 }
