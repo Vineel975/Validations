@@ -472,21 +472,32 @@ export function ResultView({
   // Sends the approved accommodation to Spectra parent via postMessage.
   // Called immediately on Save click — does not depend on Convex save succeeding.
   const sendAccommodationToSpectra = () => {
-    const facilityId =
-      approvedAccommodationRef.current ?? (spectraFields?.availedAccommodationId as string | undefined) ?? null;
-    console.log("[ClaimAI][Accomm] sendAccommodationToSpectra — facilityId:", facilityId, "inIframe:", window.parent !== window);
-    if (!facilityId) {
-      console.warn("[ClaimAI][Accomm] No facilityId available");
+    if (!(window.parent && window.parent !== window)) {
+      // Not running inside an iframe — nothing to do
       return;
     }
-    if (window.parent && window.parent !== window) {
+
+    // If AI determined a specific facility ID, send it.
+    // If spectraFields has the availed ID, send that.
+    // If neither is available (e.g. job was created locally, not via Spectra),
+    // send a "copyFromAvailed" signal so Spectra copies ddlReceivedAccomodation
+    // → ddlApprovedFacility using its own existing logic.
+    const facilityId =
+      approvedAccommodationRef.current ??
+      (spectraFields?.availedAccommodationId as string | undefined) ??
+      null;
+
+    if (facilityId) {
       window.parent.postMessage(
         { source: "claimai", type: "setApprovedAccommodation", facilityId },
         "*",
       );
-      console.log("[ClaimAI][Accomm] postMessage sent:", facilityId);
     } else {
-      console.warn("[ClaimAI][Accomm] Not in iframe — postMessage skipped");
+      // Tell Spectra to copy availed → approved using its own DOM values
+      window.parent.postMessage(
+        { source: "claimai", type: "copyAvailedToApproved" },
+        "*",
+      );
     }
   };
 
@@ -495,7 +506,6 @@ export function ResultView({
       const claimId = state?.claimId?.trim();
       const facilityOptions = (spectraFields?.facilityOptions as Array<{ id: string; text: string }> | undefined) ?? [];
       const availedId = spectraFields?.availedAccommodationId as string | undefined;
-      console.log("[ClaimAI][Accomm] determineApprovedAccommodation — claimId:", claimId, "availedId:", availedId, "facilityOptions:", facilityOptions);
       if (!claimId || !facilityOptions.length || !availedId) return availedId ?? null;
 
       // Find availed room text
@@ -626,26 +636,14 @@ export function ResultView({
   // so the result is ready by the time Save is clicked (no delay on save)
   // Placed here — after displayAnalysis and determineApprovedAccommodation are defined
   useEffect(() => {
-    console.log("[ClaimAI][Accomm] useEffect fired. availedId:", spectraFields?.availedAccommodationId, "facilityOptions:", spectraFields?.facilityOptions?.length, "displayAnalysis:", !!displayAnalysis);
     approvedAccommodationRef.current = null;
-    if (!spectraFields?.availedAccommodationId || !spectraFields?.facilityOptions?.length) {
-      console.log("[ClaimAI][Accomm] Skipping — missing availedAccommodationId or facilityOptions");
-      return;
-    }
-    if (!displayAnalysis) {
-      console.log("[ClaimAI][Accomm] Skipping — no displayAnalysis");
-      return;
-    }
+    if (!spectraFields?.availedAccommodationId || !spectraFields?.facilityOptions?.length) return;
+    if (!displayAnalysis) return;
 
     let cancelled = false;
     const run = async () => {
-      console.log("[ClaimAI][Accomm] Starting determination...");
       const result = await determineApprovedAccommodation();
-      console.log("[ClaimAI][Accomm] Result:", result);
-      if (!cancelled) {
-        approvedAccommodationRef.current = result;
-        console.log("[ClaimAI][Accomm] Stored in ref:", approvedAccommodationRef.current);
-      }
+      if (!cancelled) approvedAccommodationRef.current = result;
     };
     void run();
     return () => { cancelled = true; };
