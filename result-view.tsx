@@ -554,14 +554,9 @@ export function ResultView({
 
     if (!lines.length) return { type: "", message: "" };
 
-    const message = "The following discrepancies/issues were found during claim review:
-
-"
-      + lines.join("
-")
-      + "
-
-Please provide clarification or submit the correct documents.";
+    const message = "The following discrepancies/issues were found during claim review:\n\n"
+      + lines.join("\n")
+      + "\n\nPlease provide clarification or submit the correct documents.";
 
     return { type: "billing", message };
   };
