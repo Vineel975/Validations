@@ -8495,21 +8495,12 @@
 
                 if (event.data.type === 'setClinicalDetails') {
                     var diagnosis   = event.data.diagnosis   || '';
-                    var doctorNotes = event.data.doctorNotes || '';
 
-                    // Probable Diagnosis — populate only if currently empty
+                    // Treatment Details (txtProbableLineOfTreatment) — Diagnosis from ClaimAI
                     if (diagnosis) {
-                        var $diag = $('#txtProbableDiagnosis');
-                        if (!$diag.val() || $diag.val().trim() === '') {
-                            $diag.val(diagnosis).trigger('change');
-                        }
-                    }
-
-                    // Present Complaint — populate only if currently empty
-                    if (doctorNotes) {
-                        var $complaint = $('#txtPresentComplaint');
-                        if (!$complaint.val() || $complaint.val().trim() === '') {
-                            $complaint.val(doctorNotes).trigger('change');
+                        var $treatment = $('#txtProbableLineOfTreatment');
+                        if (!$treatment.val() || $treatment.val().trim() === '') {
+                            $treatment.val(diagnosis).trigger('change');
                         }
                     }
                 }
