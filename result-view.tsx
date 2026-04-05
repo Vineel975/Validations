@@ -496,12 +496,19 @@ export function ResultView({
     }
 
     // ── Clinical / Treatment Details ─────────────────────────────────────────
-    // Diagnosis → txtProbableLineOfTreatment (Treatment Details field)
-    const diagnosis = displayAnalysis?.medicalAdmissibility?.diagnosis ?? null;
+    const diagnosis        = displayAnalysis?.medicalAdmissibility?.diagnosis        ?? null;
+    const lineOfTreatment  = (displayAnalysis?.medicalAdmissibility as { lineOfTreatment?: string | null } | null | undefined)?.lineOfTreatment ?? null;
+    const doctorNotes      = displayAnalysis?.medicalAdmissibility?.doctorNotes      ?? null;
 
-    if (diagnosis) {
+    if (diagnosis || lineOfTreatment || doctorNotes) {
       window.parent.postMessage(
-        { source: "claimai", type: "setClinicalDetails", diagnosis },
+        {
+          source:          "claimai",
+          type:            "setClinicalDetails",
+          diagnosis:       diagnosis       ?? "",
+          lineOfTreatment: lineOfTreatment ?? "",
+          doctorNotes:     doctorNotes     ?? "",
+        },
         "*",
       );
     }
