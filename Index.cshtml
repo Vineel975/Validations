@@ -8494,13 +8494,33 @@
                 }
 
                 if (event.data.type === 'setClinicalDetails') {
-                    var diagnosis   = event.data.diagnosis   || '';
+                    var diagnosis       = event.data.diagnosis       || '';
+                    var lineOfTreatment = event.data.lineOfTreatment || '';
+                    var doctorNotes     = event.data.doctorNotes     || '';
 
-                    // Treatment Details (txtProbableLineOfTreatment) — Diagnosis from ClaimAI
+                    // Probable Diagnosis → txtProbableDiagnosis
                     if (diagnosis) {
+                        var $diag = $('#txtProbableDiagnosis');
+                        if (!$diag.val() || $diag.val().trim() === '') {
+                            $diag.val(diagnosis).trigger('change');
+                        }
+                    }
+
+                    // Treatment Details → txtProbableLineOfTreatment
+                    // Use lineOfTreatment if extracted, fall back to diagnosis
+                    var treatmentValue = lineOfTreatment || diagnosis;
+                    if (treatmentValue) {
                         var $treatment = $('#txtProbableLineOfTreatment');
                         if (!$treatment.val() || $treatment.val().trim() === '') {
-                            $treatment.val(diagnosis).trigger('change');
+                            $treatment.val(treatmentValue).trigger('change');
+                        }
+                    }
+
+                    // Presenting Complaint → txtPresentComplaint
+                    if (doctorNotes) {
+                        var $complaint = $('#txtPresentComplaint');
+                        if (!$complaint.val() || $complaint.val().trim() === '') {
+                            $complaint.val(doctorNotes).trigger('change');
                         }
                     }
                 }
