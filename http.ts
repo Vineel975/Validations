@@ -71,16 +71,7 @@ http.route({
         hospitalFileName?:   string;
         tariffBase64?:       string;
         tariffFileName?:     string;
-        spectraFields?: {
-          patientName?:   string;
-          patientAge?:    string;
-          patientGender?: string;
-          policyNumber?:  string;
-          hospitalName?:  string;
-          admissionDate?: string;
-          dischargeDate?: string;
-          documentDate?:  string;
-        };
+        spectraFields?: Record<string, unknown>;
       };
 
       // claimId is required by createJobWithFiles (v.string(), not optional)
