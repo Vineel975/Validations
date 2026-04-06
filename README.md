@@ -1,3 +1,6 @@
+[BenefitExtraction] all parent condition names: (25) ['Exceptions', 'Exclusions', 'General Conditions', 'General Copay', 'Pre-Hospitalization', 'Ailment Conditions', 'Buffer', 'Sub-Limits', 'Domiciliary', 'Maternity', 'Pre Natal', 'Post Natal', 'Baby Coverage', 'Post-Hospitalization', 'Deductible', 'Services', 'Room Rent Charges', 'ICU Charges', 'Nursing Charges', 'DMO/RMO Charges', 'Benefits', 'Zonal Copay', 'OPD', 'Implants/devices', 'Pre/post Natal']
+
+
 const PDFMerger = require('pdf-merger-js');
 
 async function mergePDFs() {
