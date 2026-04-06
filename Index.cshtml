@@ -8494,8 +8494,9 @@
                 }
 
                 if (event.data.type === 'setClinicalDetails') {
-                    var diagnosis       = event.data.diagnosis       || '';
-                    var lineOfTreatment = event.data.lineOfTreatment || '';
+                    var diagnosis            = event.data.diagnosis            || '';
+                    var lineOfTreatment      = event.data.lineOfTreatment      || '';
+                    var presentingComplaint  = event.data.presentingComplaint  || '';
 
                     // Probable Diagnosis → txtProbableDiagnosis
                     if (diagnosis) {
@@ -8506,13 +8507,17 @@
                     }
 
                     // Treatment Details → txtProbableLineOfTreatment
-                    // Use lineOfTreatment if extracted, fall back to diagnosis
                     var treatmentValue = lineOfTreatment || diagnosis;
                     if (treatmentValue) {
                         var $treatment = $('#txtProbableLineOfTreatment');
                         if (!$treatment.val() || $treatment.val().trim() === '') {
                             $treatment.val(treatmentValue).trigger('change');
                         }
+                    }
+
+                    // Presenting Complaint → txtPresentComplaint (always overwrite with user input)
+                    if (presentingComplaint) {
+                        $('#txtPresentComplaint').val(presentingComplaint).trigger('change');
                     }
                 }
             });
