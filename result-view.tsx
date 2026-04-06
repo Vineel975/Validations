@@ -615,14 +615,26 @@ export function ResultView({
     const diagnosis        = displayAnalysis?.medicalAdmissibility?.diagnosis        ?? null;
     const lineOfTreatment  = (displayAnalysis?.medicalAdmissibility as { lineOfTreatment?: string | null } | null | undefined)?.lineOfTreatment ?? null;
 
-    if (diagnosis || lineOfTreatment || presentingComplaint.trim()) {
+    // Infer hospital treatment type: Surgical or Medical
+    const diagLower = (diagnosis ?? "").toLowerCase();
+    const lineOfTreatmentLower = (lineOfTreatment ?? "").toLowerCase();
+    const combined = `${diagLower} ${lineOfTreatmentLower}`;
+    const hospTreatmentKeyword =
+      /cataract|phaco|surger|cholecyst|appendic|hernia|fracture|ortho|laparoscop|bypass|angioplasty|stent|arthroplasty|joint replacement|spine|neurosurg|tumor|carcinoma|resection|transplant|excision|biopsy|repair|fixation/.test(combined)
+        ? "surgical"
+        : /pneumonia|infection|fever|diabet|hypertension|asthma|copd|bronchit|cardiac arrest|myocardial|renal failure|hepatitis|conservative|medical management|iv antibio|chemotherapy/.test(combined)
+        ? "medical"
+        : null;
+
+    if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
       window.parent.postMessage(
         {
-          source:              "claimai",
-          type:                "setClinicalDetails",
-          diagnosis:           diagnosis            ?? "",
-          lineOfTreatment:     lineOfTreatment      ?? "",
-          presentingComplaint: presentingComplaint.trim(),
+          source:               "claimai",
+          type:                 "setClinicalDetails",
+          diagnosis:            diagnosis             ?? "",
+          lineOfTreatment:      lineOfTreatment       ?? "",
+          presentingComplaint:  presentingComplaint.trim(),
+          hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
         },
         "*",
       );
