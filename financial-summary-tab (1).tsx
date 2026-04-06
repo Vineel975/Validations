@@ -150,13 +150,9 @@ export function FinancialSummaryTab({
           if (id !== null) condById.set(id, row);
         });
 
-        // Extract cappings from all condition groups — these are the "Alignment Conditions"
-        // in Spectra terminology (Room Rent, Sub-Limits, Ailment Conditions etc.)
+        // Extract only from "Ailment Conditions" group
         const caps: string[] = [];
         const seen = new Set<string>();
-
-        // Skip these noise groups
-        const skipGroups = new Set(["exceptions","exclusions","buffer","services","opd","maternity","pre natal","post natal","baby coverage","pre/post natal","pre natal"]);
 
         conditions.forEach((row) => {
           const parentId = parseId(getF(row, ["ParentID"]));
@@ -164,7 +160,7 @@ export function FinancialSummaryTab({
           const parent = condById.get(parentId);
           if (!parent) return;
           const parentName = asT(getF(parent, ["Name"]));
-          if (skipGroups.has(parentName.toLowerCase())) return;
+          if (!parentName.toLowerCase().includes("ailment")) return;
 
           const condId = parseId(getF(row, ["ID"]));
           if (!condId) return;
@@ -175,27 +171,11 @@ export function FinancialSummaryTab({
           );
 
           linkedRules.forEach((rule) => {
-            // Only show if there's an actual capping/limit value
-            const cappingLines: string[] = [];
-            [
-              describeLimit("Overall Limit",    getF(rule, ["ExternalValueAbs"]), getF(rule, ["ExternalValuePerc"])),
-              describeLimit("Internal Capping", getF(rule, ["InternalValueAbs"]), getF(rule, ["InternalValuePerc"])),
-              describeLimit("Claim Limit",       getF(rule, ["ClaimLimit"]),       getF(rule, ["ClaimPerc"])),
-              describeLimit("Individual Limit",  getF(rule, ["IndividualLimit"]),  getF(rule, ["IndividualPerc"]), getF(rule, ["IndividualClaimCount"])),
-            ].forEach((h) => { if (h) cappingLines.push(h); });
-
-            // Also include remark if it has limit/cap info
             const remark = asT(getF(rule, ["Remarks"]));
-            if (remark && (remark.includes("cap") || remark.includes("limit") || remark.includes("Rs") || remark.includes("%")))
-              cappingLines.push(remark);
-
-            cappingLines.forEach((h) => {
-              const key = `${parentName}|${condName}|${h}`;
-              if (!seen.has(key)) {
-                seen.add(key);
-                caps.push(`${parentName} › ${condName}: ${h}`);
-              }
-            });
+            if (remark && !seen.has(remark)) {
+              seen.add(remark);
+              caps.push(`${condName}: ${remark}`);
+            }
           });
         });
 
@@ -403,19 +383,16 @@ export function FinancialSummaryTab({
               </div>
               <div className="text-sm text-gray-700 mb-3">{formatDisplayAmount(benefitTotal)}</div>
               {alignmentCappings.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1">
-                    Alignment Conditions / Cappings
-                  </div>
+                <ul className="space-y-1 list-disc list-inside">
                   {alignmentCappings.map((cap, i) => (
-                    <div
-                      key={i}
-                      className="text-xs text-purple-800 bg-purple-100 border border-purple-200 rounded px-2 py-1"
-                    >
+                    <li key={i} className="text-xs text-purple-900">
                       {cap}
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
+              )}
+              {alignmentCappings.length === 0 && (
+                <div className="text-xs text-purple-400 italic">Loading ailment conditions...</div>
               )}
             </CardContent>
           </Card>
