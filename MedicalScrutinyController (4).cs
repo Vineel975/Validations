@@ -7745,36 +7745,64 @@ namespace Enrollment.Controllers
                             }
                         }
 
+                        // Discover actual column names from schema
+                        var colCmd = conn.CreateCommand();
+                        colCmd.CommandText = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Claimsdetails'";
+                        var actualCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        using (var rdr = colCmd.ExecuteReader())
+                            while (rdr.Read()) actualCols.Add(rdr.GetString(0));
+
+                        debugInfo += " | cols:" + string.Join(",", actualCols);
+
+                        // Map friendly names → possible actual column names (try multiple variants)
+                        var fieldMap = new System.Collections.Generic.Dictionary<string, string[]>
+                        {
+                            { "diagnosis",       new[] { "ProbableDiagnosis", "Probable_Diagnosis", "probablediagnosis", "Diagnosis", "ProbDiagnosis" } },
+                            { "lineoftreatment", new[] { "ProbableLineOfTreatment", "Probable_LineOfTreatment", "LineOfTreatment", "ProbLineOfTreatment", "ProbableTreatment", "ProbableLineofTreatment" } },
+                            { "complaint",       new[] { "PresentComplaint", "PresentingComplaint", "PresentIllness", "ChiefComplaint", "Complaint" } },
+                            { "hosptype",        new[] { "HospTreatmentTypeID", "HospTreatTypeID", "HospTreatmentType", "TreatmentTypeID", "HospitalTreatmentTypeID" } },
+                        };
+
+                        string FindCol(string key) {
+                            foreach (var candidate in fieldMap[key])
+                                if (actualCols.Contains(candidate)) return candidate;
+                            return null;
+                        }
+
                         var setClauses = new System.Collections.Generic.List<string>();
                         var cmd = conn.CreateCommand();
 
-                        if (!string.IsNullOrWhiteSpace(probableDiagnosis))
+                        var diagCol = FindCol("diagnosis");
+                        if (!string.IsNullOrWhiteSpace(probableDiagnosis) && diagCol != null)
                         {
-                            setClauses.Add("ProbableDiagnosis = @ProbableDiagnosis");
+                            setClauses.Add(diagCol + " = @ProbableDiagnosis");
                             cmd.Parameters.AddWithValue("@ProbableDiagnosis", probableDiagnosis.Trim());
                         }
-                        if (!string.IsNullOrWhiteSpace(probableLineOfTreatment))
+                        var lotCol = FindCol("lineoftreatment");
+                        if (!string.IsNullOrWhiteSpace(probableLineOfTreatment) && lotCol != null)
                         {
-                            setClauses.Add("ProbableLineOfTreatment = @ProbableLineOfTreatment");
+                            setClauses.Add(lotCol + " = @ProbableLineOfTreatment");
                             cmd.Parameters.AddWithValue("@ProbableLineOfTreatment", probableLineOfTreatment.Trim());
                         }
-                        if (!string.IsNullOrWhiteSpace(presentComplaint))
+                        var compCol = FindCol("complaint");
+                        if (!string.IsNullOrWhiteSpace(presentComplaint) && compCol != null)
                         {
-                            setClauses.Add("PresentComplaint = @PresentComplaint");
+                            setClauses.Add(compCol + " = @PresentComplaint");
                             cmd.Parameters.AddWithValue("@PresentComplaint", presentComplaint.Trim());
                         }
-                        if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
+                        var hospCol = FindCol("hosptype");
+                        if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId) && hospCol != null)
                         {
                             int typeId;
                             if (int.TryParse(hospTreatmentTypeId.Trim(), out typeId) && typeId > 0)
                             {
-                                setClauses.Add("HospTreatmentTypeID = @HospTreatmentTypeID");
+                                setClauses.Add(hospCol + " = @HospTreatmentTypeID");
                                 cmd.Parameters.AddWithValue("@HospTreatmentTypeID", typeId);
                             }
                         }
 
                         if (setClauses.Count == 0)
-                            return Json(new { success = true, message = "Nothing to update" });
+                            return Json(new { success = false, message = "No matching columns found", debug = debugInfo });
 
                         cmd.CommandText = string.Format(
                             "UPDATE Claimsdetails SET {0} WHERE ID = @ID AND ISNULL(Deleted,0) = 0",
