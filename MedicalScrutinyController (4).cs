@@ -7709,7 +7709,7 @@ namespace Enrollment.Controllers
                     var m = System.Text.RegularExpressions.Regex.Match(
                         connStr, @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 int rowsAffected = 0;
@@ -7798,7 +7798,7 @@ namespace Enrollment.Controllers
                     var m = System.Text.RegularExpressions.Regex.Match(
                         connStr, @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 string age          = null;
