@@ -1,3 +1,5 @@
+[ClaimAI] Save result: {success: false, rowsAffected: 0, error: "Invalid object name 'Claimsdetail'."}
+
 [ClaimAI] Clinical details auto-save failed: <!DOCTYPE html>
 <html>
     <head>
