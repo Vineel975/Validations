@@ -1869,6 +1869,40 @@ export function PatientInfoTab({
         <CardTitle>Patient Information</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Case Summary — 1-2 sentence snapshot */}
+        {(() => {
+          const diagnosis = (displayAnalysis?.medicalAdmissibility as { diagnosis?: string } | null | undefined)?.diagnosis;
+          const lineOfTreatment = (displayAnalysis?.medicalAdmissibility as { lineOfTreatment?: string } | null | undefined)?.lineOfTreatment;
+          const patientName  = displayAnalysis?.patientName?.value;
+          const hospitalName = displayAnalysis?.hospitalName?.value;
+          const admDate      = displayAnalysis?.admissionDate?.value;
+          const totalBill    = displayAnalysis?.totalAmount?.value;
+          if (!diagnosis && !patientName) return null;
+
+          // Sentence 1: who, where, when, what happened
+          const s1Parts: string[] = [];
+          if (patientName)  s1Parts.push(String(patientName));
+          if (hospitalName) s1Parts.push(`was admitted to ${String(hospitalName)}`);
+          if (admDate)      s1Parts.push(`on ${String(admDate)}`);
+          if (diagnosis)    s1Parts.push(`with ${diagnosis}`);
+          const sentence1 = s1Parts.length ? s1Parts.join(" ") + "." : "";
+
+          // Sentence 2: treatment and amount
+          const s2Parts: string[] = [];
+          if (lineOfTreatment) s2Parts.push(`Treatment: ${lineOfTreatment}`);
+          if (totalBill != null)
+            s2Parts.push(`Total bill amount is INR ${Number(totalBill).toLocaleString("en-IN")}`);
+          const sentence2 = s2Parts.join(". ") + (s2Parts.length ? "." : "");
+
+          const summary = [sentence1, sentence2].filter(Boolean).join(" ");
+          if (!summary.trim()) return null;
+
+          return (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800 leading-relaxed">
+              {summary}
+            </div>
+          );
+        })()}
         {isValidating && (
           <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
             <svg className="h-3.5 w-3.5 animate-spin shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
