@@ -1,3 +1,13 @@
+
+debug
+: 
+"ID=13422016 exists=1"
+error
+: 
+"Invalid column name 'ProbableDiagnosis'.\r\nInvalid column name 'ProbableLineOfTreatment'.\r\nInvalid column name 'HospTreatmentTypeID'."
+
+
+
 [ClaimAI] Save result: {success: false, rowsAffected: 0, error: "Invalid object name 'Claimsdetail'."}
 
 [ClaimAI] Clinical details auto-save failed: <!DOCTYPE html>
