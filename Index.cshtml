@@ -8538,19 +8538,27 @@
 
                     // Auto-save: call dedicated ClaimAI endpoint — no page refresh
                     setTimeout(function () {
-                        var hospTypeId = $('#ddlHospTreatmentType').val() || '';
+                        var claimDetailsId = $('#hdnClaimDetailsID').val() || '';
+                        var hospTypeId     = $('#ddlHospTreatmentType').val() || '';
+
+                        console.log('[ClaimAI] Saving clinical details. ClaimDetailsID:', claimDetailsId,
+                            'Diagnosis:', $('#txtProbableDiagnosis').val(),
+                            'Treatment:', $('#txtProbableLineOfTreatment').val(),
+                            'Complaint:', $('#txtPresentComplaint').val(),
+                            'HospType:', hospTypeId);
+
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
                             type: 'POST',
                             data: {
-                                claimId:                 $('#hdnClaimID').val(),
-                                slNo:                    $('#hdnClaimSlNo').val(),
+                                claimDetailsId:          claimDetailsId,
                                 probableDiagnosis:       $('#txtProbableDiagnosis').val(),
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
                                 hospTreatmentTypeId:     hospTypeId
                             },
                             success: function (res) {
+                                console.log('[ClaimAI] Save result:', res);
                                 if (res && res.success) {
                                     var $toast = $('<div/>')
                                         .text('✓ Hospitalization details saved')
@@ -8564,10 +8572,12 @@
                                     setTimeout(function () {
                                         $toast.fadeOut(400, function () { $toast.remove(); });
                                     }, 2500);
+                                } else {
+                                    console.warn('[ClaimAI] Save returned failure:', res);
                                 }
                             },
-                            error: function () {
-                                console.warn('[ClaimAI] Clinical details auto-save failed.');
+                            error: function (xhr) {
+                                console.warn('[ClaimAI] Clinical details auto-save failed:', xhr.responseText);
                             }
                         });
                     }, 500);
