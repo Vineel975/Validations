@@ -150,61 +150,58 @@ export function FinancialSummaryTab({
           if (id !== null) condById.set(id, row);
         });
 
-        // Find "Alignment Conditions" parent groups
+        // Extract cappings from all condition groups — these are the "Alignment Conditions"
+        // in Spectra terminology (Room Rent, Sub-Limits, Ailment Conditions etc.)
         const caps: string[] = [];
         const seen = new Set<string>();
+
+        // Skip these noise groups
+        const skipGroups = new Set(["exceptions","exclusions","buffer","services","opd","maternity","pre natal","post natal","baby coverage","pre/post natal","pre natal"]);
+
         conditions.forEach((row) => {
           const parentId = parseId(getF(row, ["ParentID"]));
           if (!parentId) return;
           const parent = condById.get(parentId);
           if (!parent) return;
           const parentName = asT(getF(parent, ["Name"]));
-          // Only process Alignment Conditions groups
-          if (!parentName.toLowerCase().includes("alignment")) return;
+          if (skipGroups.has(parentName.toLowerCase())) return;
+
           const condId = parseId(getF(row, ["ID"]));
           if (!condId) return;
           const condName = asT(getF(row, ["Name"]));
 
-          // Find rules linked to this condition
           const linkedRules = ruleConfigs.filter(
             (r) => parseId(getF(r, ["BPConditionID"])) === condId
           );
 
           linkedRules.forEach((rule) => {
-            // Extract capping highlights
-            const highlights: string[] = [];
-            const remark = asT(getF(rule, ["Remarks"]));
-            if (remark) highlights.push(remark);
+            // Only show if there's an actual capping/limit value
+            const cappingLines: string[] = [];
             [
-              describeLimit("Overall Limit",   getF(rule, ["ExternalValueAbs"]), getF(rule, ["ExternalValuePerc"])),
+              describeLimit("Overall Limit",    getF(rule, ["ExternalValueAbs"]), getF(rule, ["ExternalValuePerc"])),
               describeLimit("Internal Capping", getF(rule, ["InternalValueAbs"]), getF(rule, ["InternalValuePerc"])),
-              describeLimit("Claim Limit",      getF(rule, ["ClaimLimit"]),       getF(rule, ["ClaimPerc"])),
-              describeLimit("Individual Limit", getF(rule, ["IndividualLimit"]),  getF(rule, ["IndividualPerc"]), getF(rule, ["IndividualClaimCount"])),
-            ].forEach((h) => { if (h) highlights.push(h); });
+              describeLimit("Claim Limit",       getF(rule, ["ClaimLimit"]),       getF(rule, ["ClaimPerc"])),
+              describeLimit("Individual Limit",  getF(rule, ["IndividualLimit"]),  getF(rule, ["IndividualPerc"]), getF(rule, ["IndividualClaimCount"])),
+            ].forEach((h) => { if (h) cappingLines.push(h); });
 
-            highlights.forEach((h) => {
-              const key = `${condName}|${h}`;
-              if (!seen.has(key)) { seen.add(key); caps.push(`${condName}: ${h}`); }
+            // Also include remark if it has limit/cap info
+            const remark = asT(getF(rule, ["Remarks"]));
+            if (remark && (remark.includes("cap") || remark.includes("limit") || remark.includes("Rs") || remark.includes("%")))
+              cappingLines.push(remark);
+
+            cappingLines.forEach((h) => {
+              const key = `${parentName}|${condName}|${h}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                caps.push(`${parentName} › ${condName}: ${h}`);
+              }
             });
           });
         });
 
-        console.log("[BenefitExtraction] conditions:", conditions.length, "ruleConfigs:", ruleConfigs.length);
-        console.log("[BenefitExtraction] caps found:", caps);
-        if (caps.length === 0) {
-          // Debug: log all parent names to find correct keyword
-          const parentNames = new Set<string>();
-          conditions.forEach((row) => {
-            const parentId = parseId(getF(row, ["ParentID"]));
-            if (!parentId) return;
-            const parent = condById.get(parentId);
-            if (parent) parentNames.add(asT(getF(parent, ["Name"])));
-          });
-          console.log("[BenefitExtraction] all parent condition names:", Array.from(parentNames));
-        }
         setAlignmentCappings(caps);
       })
-      .catch((e) => console.error("[BenefitExtraction] fetch error:", e));
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [claimId]);
   // ───────────────────────────────────────────────────────────────────────────
