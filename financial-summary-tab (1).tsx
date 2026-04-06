@@ -376,23 +376,24 @@ export function FinancialSummaryTab({
           </Card>
 
           {/* Benefit extraction */}
-          <Card className="bg-purple-50 border-2 border-purple-200">
+          <Card className="bg-white border-2">
             <CardContent>
-              <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-purple-700">
+              <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Benefit extraction
               </div>
-              <div className="text-sm text-gray-700 mb-3">{formatDisplayAmount(benefitTotal)}</div>
               {alignmentCappings.length > 0 && (
                 <ul className="space-y-1 list-disc list-inside">
-                  {alignmentCappings.map((cap, i) => (
-                    <li key={i} className="text-xs text-purple-900">
-                      {cap}
-                    </li>
-                  ))}
+                  {alignmentCappings.map((cap, i) => {
+                    // Strip "ConditionName: " prefix if present
+                    const colonIdx = cap.indexOf(": ");
+                    const text = colonIdx !== -1 ? cap.slice(colonIdx + 2) : cap;
+                    return (
+                      <li key={i} className="text-sm text-gray-800">
+                        {text}
+                      </li>
+                    );
+                  })}
                 </ul>
-              )}
-              {alignmentCappings.length === 0 && (
-                <div className="text-xs text-purple-400 italic">Loading ailment conditions...</div>
               )}
             </CardContent>
           </Card>
