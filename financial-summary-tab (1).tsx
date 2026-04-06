@@ -189,9 +189,22 @@ export function FinancialSummaryTab({
           });
         });
 
+        console.log("[BenefitExtraction] conditions:", conditions.length, "ruleConfigs:", ruleConfigs.length);
+        console.log("[BenefitExtraction] caps found:", caps);
+        if (caps.length === 0) {
+          // Debug: log all parent names to find correct keyword
+          const parentNames = new Set<string>();
+          conditions.forEach((row) => {
+            const parentId = parseId(getF(row, ["ParentID"]));
+            if (!parentId) return;
+            const parent = condById.get(parentId);
+            if (parent) parentNames.add(asT(getF(parent, ["Name"])));
+          });
+          console.log("[BenefitExtraction] all parent condition names:", Array.from(parentNames));
+        }
         setAlignmentCappings(caps);
       })
-      .catch(() => {});
+      .catch((e) => console.error("[BenefitExtraction] fetch error:", e));
     return () => { cancelled = true; };
   }, [claimId]);
   // ───────────────────────────────────────────────────────────────────────────
