@@ -164,6 +164,7 @@ export function ResultView({
     null,
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [presentingComplaint, setPresentingComplaint] = useState("");
   const [benefitPlanSnapshot, setBenefitPlanSnapshot] = useState<Record<string, unknown> | null>(null);
   const changeLogRef = useRef(new ChangeLog());
   const pendingChangesRef = useRef(new ChangeLog()); // Track pending changes separately
@@ -614,13 +615,14 @@ export function ResultView({
     const diagnosis        = displayAnalysis?.medicalAdmissibility?.diagnosis        ?? null;
     const lineOfTreatment  = (displayAnalysis?.medicalAdmissibility as { lineOfTreatment?: string | null } | null | undefined)?.lineOfTreatment ?? null;
 
-    if (diagnosis || lineOfTreatment) {
+    if (diagnosis || lineOfTreatment || presentingComplaint.trim()) {
       window.parent.postMessage(
         {
-          source:          "claimai",
-          type:            "setClinicalDetails",
-          diagnosis:       diagnosis       ?? "",
-          lineOfTreatment: lineOfTreatment ?? "",
+          source:              "claimai",
+          type:                "setClinicalDetails",
+          diagnosis:           diagnosis            ?? "",
+          lineOfTreatment:     lineOfTreatment      ?? "",
+          presentingComplaint: presentingComplaint.trim(),
         },
         "*",
       );
@@ -1083,7 +1085,19 @@ export function ResultView({
                     claimId={state?.claimId}
                   />
                 </section>
-                <div className="mt-6 border-t border-border/80 py-4">
+                <div className="mt-4 space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Presenting Complaint
+                  </label>
+                  <textarea
+                    value={presentingComplaint}
+                    onChange={(e) => setPresentingComplaint(e.target.value)}
+                    placeholder="Enter presenting complaint..."
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 resize-none"
+                  />
+                </div>
+                <div className="mt-4 border-t border-border/80 py-4">
                   <SaveDropdown
                     onSave={() => {
                       sendAccommodationToSpectra();
