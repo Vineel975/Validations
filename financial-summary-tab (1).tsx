@@ -106,11 +106,13 @@ export function FinancialSummaryTab({
     void loadBsi();
   }, [loadBsi]);
 
-  // Fetch benefit plan alignment conditions
+  // Fetch benefit plan — extract Alignment Conditions > Alignment Cappings
+  // Mirrors the buildConditionGroups + getRuleHighlights logic in benefit-plan-tab.tsx
   useEffect(() => {
     const trimmed = claimId?.trim();
     if (!trimmed) return;
     let cancelled = false;
+
     fetch("/api/benefit-plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -119,22 +121,74 @@ export function FinancialSummaryTab({
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
+        type Row = Record<string, unknown>;
         const snap = (d as { snapshot?: Record<string, unknown> }).snapshot;
         if (!snap) return;
+
+        const getF = (row: Row, keys: string[]): unknown => {
+          for (const k of keys) if (row[k] !== undefined && row[k] !== null) return row[k];
+          return null;
+        };
+        const asT = (v: unknown) => String(v ?? "").trim();
+        const parseId = (v: unknown): number | null => {
+          const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null;
+        };
+        const describeLimit = (label: string, abs: unknown, perc: unknown, count?: unknown): string | null => {
+          const a = asT(abs), p = asT(perc);
+          if (!a && !p) return null;
+          const parts = [a ? `${label} is ${a}` : "", p ? `(or) ${p}% on SumInsured` : "", count ? `::: Count ${count}` : ""].filter(Boolean);
+          return parts.join(" ");
+        };
+
+        const conditions: Row[] = ((snap as { masters?: { conditions?: Row[] } }).masters?.conditions) ?? [];
+        const ruleConfigs: Row[] = ((snap as { main?: { ruleConfigs?: Row[] } }).main?.ruleConfigs) ?? [];
+
+        // Build condition id→name map
+        const condById = new Map<number, Row>();
+        conditions.forEach((row) => {
+          const id = parseId(getF(row, ["ID"]));
+          if (id !== null) condById.set(id, row);
+        });
+
+        // Find "Alignment Conditions" parent groups
         const caps: string[] = [];
-        // Room notes from remarks.main
-        const remarksMain = (snap as { remarks?: { main?: Array<Record<string, unknown>> } }).remarks?.main ?? [];
-        for (const row of remarksMain) {
-          const rn = String(row["RoomNotes"] ?? "").trim();
-          if (rn) caps.push(rn);
-        }
-        // Rule cappings from main.ruleConfigs
-        const ruleConfigs = (snap as { main?: { ruleConfigs?: Array<Record<string, unknown>> } }).main?.ruleConfigs ?? [];
-        for (const rule of ruleConfigs) {
-          const cap = String(rule["InternalCapping"] ?? rule["ExternalCapping"] ?? rule["CappingAmount"] ?? "").trim();
-          const name = String(rule["ServiceName"] ?? rule["Name"] ?? "").trim();
-          if (cap && cap !== "0" && name) caps.push(`${name}: capping ${cap}`);
-        }
+        const seen = new Set<string>();
+        conditions.forEach((row) => {
+          const parentId = parseId(getF(row, ["ParentID"]));
+          if (!parentId) return;
+          const parent = condById.get(parentId);
+          if (!parent) return;
+          const parentName = asT(getF(parent, ["Name"]));
+          // Only process Alignment Conditions groups
+          if (!parentName.toLowerCase().includes("alignment")) return;
+          const condId = parseId(getF(row, ["ID"]));
+          if (!condId) return;
+          const condName = asT(getF(row, ["Name"]));
+
+          // Find rules linked to this condition
+          const linkedRules = ruleConfigs.filter(
+            (r) => parseId(getF(r, ["BPConditionID"])) === condId
+          );
+
+          linkedRules.forEach((rule) => {
+            // Extract capping highlights
+            const highlights: string[] = [];
+            const remark = asT(getF(rule, ["Remarks"]));
+            if (remark) highlights.push(remark);
+            [
+              describeLimit("Overall Limit",   getF(rule, ["ExternalValueAbs"]), getF(rule, ["ExternalValuePerc"])),
+              describeLimit("Internal Capping", getF(rule, ["InternalValueAbs"]), getF(rule, ["InternalValuePerc"])),
+              describeLimit("Claim Limit",      getF(rule, ["ClaimLimit"]),       getF(rule, ["ClaimPerc"])),
+              describeLimit("Individual Limit", getF(rule, ["IndividualLimit"]),  getF(rule, ["IndividualPerc"]), getF(rule, ["IndividualClaimCount"])),
+            ].forEach((h) => { if (h) highlights.push(h); });
+
+            highlights.forEach((h) => {
+              const key = `${condName}|${h}`;
+              if (!seen.has(key)) { seen.add(key); caps.push(`${condName}: ${h}`); }
+            });
+          });
+        });
+
         setAlignmentCappings(caps);
       })
       .catch(() => {});
