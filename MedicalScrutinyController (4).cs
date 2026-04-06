@@ -7686,7 +7686,8 @@ namespace Enrollment.Controllers
             string probableDiagnosis,
             string probableLineOfTreatment,
             string presentComplaint,
-            string hospTreatmentTypeId)
+            string hospTreatmentTypeId,
+            string approvedFacilityId = null)
         {
             try
             {
@@ -7710,7 +7711,6 @@ namespace Enrollment.Controllers
 
                 int rowsAffected = 0;
                 string lastError = "";
-                string debugInfo = "";
 
                 try
                 {
@@ -7725,8 +7725,7 @@ namespace Enrollment.Controllers
                         checkCmd.CommandText = "SELECT COUNT(1) FROM Claimsdetails WHERE ID = @ID AND ISNULL(Deleted,0) = 0";
                         checkCmd.Parameters.AddWithValue("@ID", rowId);
                         int exists = (int)checkCmd.ExecuteScalar();
-                        debugInfo = string.Format("ID={0} exists={1}", rowId, exists);
-
+        
                         if (exists == 0)
                         {
                             // hdnClaimDetailsID might actually be ClaimID — find latest SlNo row
@@ -7737,11 +7736,10 @@ namespace Enrollment.Controllers
                             if (found != null && found != DBNull.Value)
                             {
                                 rowId = Convert.ToInt64(found);
-                                debugInfo += string.Format(" | fallback rowId={0}", rowId);
-                            }
+                                    }
                             else
                             {
-                                return Json(new { success = false, rowsAffected = 0, error = "Row not found", debug = debugInfo });
+                                return Json(new { success = false, rowsAffected = 0, error = "Row not found" });
                             }
                         }
 
@@ -7773,6 +7771,26 @@ namespace Enrollment.Controllers
                                 cmd.Parameters.AddWithValue("@TreatmentTypeID", typeId);
                             }
                         }
+                        if (!string.IsNullOrWhiteSpace(approvedFacilityId))
+                        {
+                            int facilityId;
+                            if (int.TryParse(approvedFacilityId.Trim(), out facilityId) && facilityId > 0)
+                            {
+                                setClauses.Add("ApprovedFacilityID = @ApprovedFacilityID");
+                                cmd.Parameters.AddWithValue("@ApprovedFacilityID", facilityId);
+                            }
+                        }
+
+                        // Approved accommodation — confirmed column: ApprovedFacilityID
+                        if (!string.IsNullOrWhiteSpace(approvedFacilityId))
+                        {
+                            int facId;
+                            if (int.TryParse(approvedFacilityId.Trim(), out facId) && facId > 0)
+                            {
+                                setClauses.Add("ApprovedFacilityID = @ApprovedFacilityID");
+                                cmd.Parameters.AddWithValue("@ApprovedFacilityID", facId);
+                            }
+                        }
 
                         if (setClauses.Count == 0)
                             return Json(new { success = true, message = "Nothing to update" });
@@ -7787,7 +7805,7 @@ namespace Enrollment.Controllers
                 }
                 catch (Exception ex) { lastError = ex.Message; }
 
-                return Json(new { success = rowsAffected > 0, rowsAffected = rowsAffected, error = lastError, debug = debugInfo });
+                return Json(new { success = rowsAffected > 0, rowsAffected = rowsAffected });
             }
             catch (Exception ex)
             {
