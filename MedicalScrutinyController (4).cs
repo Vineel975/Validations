@@ -7674,7 +7674,6 @@ namespace Enrollment.Controllers
         ///
         /// GET /MedicalScrutiny/GetClaimFieldsForValidation?claimId=xxx
         /// </summary>
-        [HttpGet]
         /// <summary>
         /// Called by ClaimAI iframe to save clinical details silently (no page refresh).
         /// Updates Claimsdetails: ProbableDiagnosis, ProbableLineOfTreatment,
@@ -7711,66 +7710,83 @@ namespace Enrollment.Controllers
 
                 int rowsAffected = 0;
                 string lastError = "";
-                foreach (var tbl in new[] { "Claimsdetails", "Claimsdetail" })
+                string debugInfo = "";
+
+                try
                 {
-                    try
+                    using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                     {
-                        using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                        conn.Open();
+
+                        // Find the actual row ID — hdnClaimDetailsID may be the ID directly
+                        // or we fall back to finding by ClaimID+SlNo
+                        long rowId = numericId;
+                        var checkCmd = conn.CreateCommand();
+                        checkCmd.CommandText = "SELECT COUNT(1) FROM Claimsdetails WHERE ID = @ID AND ISNULL(Deleted,0) = 0";
+                        checkCmd.Parameters.AddWithValue("@ID", rowId);
+                        int exists = (int)checkCmd.ExecuteScalar();
+                        debugInfo = string.Format("ID={0} exists={1}", rowId, exists);
+
+                        if (exists == 0)
                         {
-                            conn.Open();
-
-                            // First verify row exists
-                            var checkCmd = conn.CreateCommand();
-                            checkCmd.CommandText = string.Format("SELECT COUNT(1) FROM {0} WHERE ID = @ID AND ISNULL(Deleted,0) = 0", tbl);
-                            checkCmd.Parameters.AddWithValue("@ID", numericId);
-                            int exists = (int)checkCmd.ExecuteScalar();
-                            if (exists == 0) continue; // try next table
-
-                            var setClauses = new System.Collections.Generic.List<string>();
-                            var cmd = conn.CreateCommand();
-
-                            if (!string.IsNullOrWhiteSpace(probableDiagnosis))
+                            // hdnClaimDetailsID might actually be ClaimID — find latest SlNo row
+                            var findCmd = conn.CreateCommand();
+                            findCmd.CommandText = "SELECT TOP 1 ID FROM Claimsdetails WHERE ClaimID = @ClaimID AND ISNULL(Deleted,0) = 0 ORDER BY SlNo DESC";
+                            findCmd.Parameters.AddWithValue("@ClaimID", rowId);
+                            var found = findCmd.ExecuteScalar();
+                            if (found != null && found != DBNull.Value)
                             {
-                                setClauses.Add("ProbableDiagnosis = @ProbableDiagnosis");
-                                cmd.Parameters.AddWithValue("@ProbableDiagnosis", probableDiagnosis.Trim());
+                                rowId = Convert.ToInt64(found);
+                                debugInfo += string.Format(" | fallback rowId={0}", rowId);
                             }
-                            if (!string.IsNullOrWhiteSpace(probableLineOfTreatment))
+                            else
                             {
-                                setClauses.Add("ProbableLineOfTreatment = @ProbableLineOfTreatment");
-                                cmd.Parameters.AddWithValue("@ProbableLineOfTreatment", probableLineOfTreatment.Trim());
+                                return Json(new { success = false, rowsAffected = 0, error = "Row not found", debug = debugInfo });
                             }
-                            if (!string.IsNullOrWhiteSpace(presentComplaint))
-                            {
-                                setClauses.Add("PresentComplaint = @PresentComplaint");
-                                cmd.Parameters.AddWithValue("@PresentComplaint", presentComplaint.Trim());
-                            }
-                            if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
-                            {
-                                int typeId;
-                                if (int.TryParse(hospTreatmentTypeId.Trim(), out typeId) && typeId > 0)
-                                {
-                                    setClauses.Add("HospTreatmentTypeID = @HospTreatmentTypeID");
-                                    cmd.Parameters.AddWithValue("@HospTreatmentTypeID", typeId);
-                                }
-                            }
-
-                            if (setClauses.Count == 0)
-                                return Json(new { success = true, message = "Nothing to update" });
-
-                            cmd.CommandText = string.Format(
-                                "UPDATE {0} SET {1} WHERE ID = @ID AND ISNULL(Deleted,0) = 0",
-                                tbl,
-                                string.Join(", ", setClauses));
-                            cmd.Parameters.AddWithValue("@ID", numericId);
-
-                            rowsAffected = cmd.ExecuteNonQuery();
-                            if (rowsAffected > 0) break;
                         }
-                    }
-                    catch (Exception ex) { lastError = ex.Message; }
-                }
 
-                return Json(new { success = rowsAffected > 0, rowsAffected = rowsAffected, error = lastError });
+                        var setClauses = new System.Collections.Generic.List<string>();
+                        var cmd = conn.CreateCommand();
+
+                        if (!string.IsNullOrWhiteSpace(probableDiagnosis))
+                        {
+                            setClauses.Add("ProbableDiagnosis = @ProbableDiagnosis");
+                            cmd.Parameters.AddWithValue("@ProbableDiagnosis", probableDiagnosis.Trim());
+                        }
+                        if (!string.IsNullOrWhiteSpace(probableLineOfTreatment))
+                        {
+                            setClauses.Add("ProbableLineOfTreatment = @ProbableLineOfTreatment");
+                            cmd.Parameters.AddWithValue("@ProbableLineOfTreatment", probableLineOfTreatment.Trim());
+                        }
+                        if (!string.IsNullOrWhiteSpace(presentComplaint))
+                        {
+                            setClauses.Add("PresentComplaint = @PresentComplaint");
+                            cmd.Parameters.AddWithValue("@PresentComplaint", presentComplaint.Trim());
+                        }
+                        if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
+                        {
+                            int typeId;
+                            if (int.TryParse(hospTreatmentTypeId.Trim(), out typeId) && typeId > 0)
+                            {
+                                setClauses.Add("HospTreatmentTypeID = @HospTreatmentTypeID");
+                                cmd.Parameters.AddWithValue("@HospTreatmentTypeID", typeId);
+                            }
+                        }
+
+                        if (setClauses.Count == 0)
+                            return Json(new { success = true, message = "Nothing to update" });
+
+                        cmd.CommandText = string.Format(
+                            "UPDATE Claimsdetails SET {0} WHERE ID = @ID AND ISNULL(Deleted,0) = 0",
+                            string.Join(", ", setClauses));
+                        cmd.Parameters.AddWithValue("@ID", rowId);
+
+                        rowsAffected = cmd.ExecuteNonQuery();
+                    }
+                }
+                catch (Exception ex) { lastError = ex.Message; }
+
+                return Json(new { success = rowsAffected > 0, rowsAffected = rowsAffected, error = lastError, debug = debugInfo });
             }
             catch (Exception ex)
             {
@@ -7779,6 +7795,7 @@ namespace Enrollment.Controllers
             }
         }
 
+        [HttpGet]
         public ActionResult GetClaimFieldsForValidation(string claimId)
         {
             try
@@ -7846,7 +7863,7 @@ namespace Enrollment.Controllers
                     }
 
                     // Document date + discharge date — try Claimsdetails first, then Claimsdetail
-                    foreach (var tbl in new[] { "Claimsdetails", "Claimsdetail" })
+                    foreach (var tbl in new[] { "Claimsdetails" })
                     {
                         try
                         {
