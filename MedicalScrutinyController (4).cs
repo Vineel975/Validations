@@ -7675,6 +7675,107 @@ namespace Enrollment.Controllers
         /// GET /MedicalScrutiny/GetClaimFieldsForValidation?claimId=xxx
         /// </summary>
         [HttpGet]
+        /// <summary>
+        /// Called by ClaimAI iframe to save clinical details silently (no page refresh).
+        /// Updates Claimsdetails: ProbableDiagnosis, ProbableLineOfTreatment,
+        /// PresentComplaint, HospTreatmentTypeID.
+        /// POST /MedicalScrutiny/SaveClinicalDetailsForClaimAI
+        /// </summary>
+        [HttpPost]
+        public ActionResult SaveClinicalDetailsForClaimAI(
+            string claimId,
+            string slNo,
+            string probableDiagnosis,
+            string probableLineOfTreatment,
+            string presentComplaint,
+            string hospTreatmentTypeId)
+        {
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                    return Json(new { success = false, message = "Session expired" });
+
+                long numericClaimId;
+                int  numericSlNo;
+                if (!long.TryParse((claimId ?? "").Trim(), out numericClaimId) ||
+                    !int.TryParse((slNo   ?? "").Trim(), out numericSlNo))
+                    return Json(new { success = false, message = "Invalid ClaimID or SlNo" });
+
+                string connStr = System.Configuration.ConfigurationManager
+                                       .ConnectionStrings["McarePlusEntities"]
+                                       .ConnectionString;
+                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        connStr, @"provider connection string=""([^""]+)""",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                }
+
+                int rowsAffected = 0;
+                foreach (var tbl in new[] { "Claimsdetails", "Claimsdetail" })
+                {
+                    try
+                    {
+                        using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                        {
+                            conn.Open();
+
+                            // Build SET clause only for non-null fields
+                            var setClauses = new System.Collections.Generic.List<string>();
+                            var cmd = conn.CreateCommand();
+
+                            if (!string.IsNullOrWhiteSpace(probableDiagnosis))
+                            {
+                                setClauses.Add("ProbableDiagnosis = @ProbableDiagnosis");
+                                cmd.Parameters.AddWithValue("@ProbableDiagnosis", probableDiagnosis.Trim());
+                            }
+                            if (!string.IsNullOrWhiteSpace(probableLineOfTreatment))
+                            {
+                                setClauses.Add("ProbableLineOfTreatment = @ProbableLineOfTreatment");
+                                cmd.Parameters.AddWithValue("@ProbableLineOfTreatment", probableLineOfTreatment.Trim());
+                            }
+                            if (!string.IsNullOrWhiteSpace(presentComplaint))
+                            {
+                                setClauses.Add("PresentComplaint = @PresentComplaint");
+                                cmd.Parameters.AddWithValue("@PresentComplaint", presentComplaint.Trim());
+                            }
+                            if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
+                            {
+                                int typeId;
+                                if (int.TryParse(hospTreatmentTypeId.Trim(), out typeId))
+                                {
+                                    setClauses.Add("HospTreatmentTypeID = @HospTreatmentTypeID");
+                                    cmd.Parameters.AddWithValue("@HospTreatmentTypeID", typeId);
+                                }
+                            }
+
+                            if (setClauses.Count == 0)
+                                return Json(new { success = true, message = "Nothing to update" });
+
+                            cmd.CommandText = string.Format(
+                                "UPDATE {0} SET {1} WHERE ClaimID = @ClaimID AND SlNo = @SlNo AND ISNULL(Deleted,0) = 0",
+                                tbl,
+                                string.Join(", ", setClauses));
+                            cmd.Parameters.AddWithValue("@ClaimID", numericClaimId);
+                            cmd.Parameters.AddWithValue("@SlNo",    numericSlNo);
+
+                            rowsAffected = cmd.ExecuteNonQuery();
+                            if (rowsAffected > 0) break; // updated — stop trying tables
+                        }
+                    }
+                    catch { /* try next table name */ }
+                }
+
+                return Json(new { success = true, rowsAffected = rowsAffected });
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                return Json(new { success = false, message = ex.Message });
+            }
+        }
+
         public ActionResult GetClaimFieldsForValidation(string claimId)
         {
             try
@@ -7709,38 +7810,66 @@ namespace Enrollment.Controllers
                 {
                     conn.Open();
 
-                    // Age + UHID from MemberPolicy via Claims
+                    // Age from MemberPolicy
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = @"
                             SELECT TOP 1
-                                CAST(mp.Age AS VARCHAR(10)) AS Age,
-                                p.Name                      AS ProviderName,
-                                CONVERT(VARCHAR(10), cd.dateofbill, 23)      AS DocumentDate,
-                                CONVERT(VARCHAR(10), cd.dateofdischarge, 23) AS DischargeDate
+                                CAST(mp.Age AS VARCHAR(10)) AS Age
                             FROM Claims c WITH (NOLOCK)
                             JOIN MemberPolicy mp WITH (NOLOCK)
                                 ON mp.ID = c.MemberPolicyID
-                            LEFT JOIN Mst_Provider p WITH (NOLOCK)
-                                ON p.ID = c.ProviderID
-                            LEFT JOIN ClaimsDetails cd WITH (NOLOCK)
-                                ON cd.ClaimID = c.ID
-                                AND ISNULL(cd.Deleted,0) = 0
                             WHERE c.ID = @ClaimID
-                              AND ISNULL(c.Deleted,0) = 0
-                            ORDER BY cd.SlNo DESC";
+                              AND ISNULL(c.Deleted,0) = 0";
                         cmd.Parameters.AddWithValue("@ClaimID", numericClaimId);
-
                         using (var reader = cmd.ExecuteReader())
-                        {
                             if (reader.Read())
-                            {
-                                age          = reader["Age"]          != DBNull.Value ? reader["Age"].ToString().Trim()          : null;
+                                age = reader["Age"] != DBNull.Value ? reader["Age"].ToString().Trim() : null;
+                    }
+
+                    // Hospital name from Mst_Provider via Claims
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT TOP 1 p.Name AS ProviderName
+                            FROM Claims c WITH (NOLOCK)
+                            JOIN Mst_Provider p WITH (NOLOCK) ON p.ID = c.ProviderID
+                            WHERE c.ID = @ClaimID
+                              AND ISNULL(c.Deleted,0) = 0";
+                        cmd.Parameters.AddWithValue("@ClaimID", numericClaimId);
+                        using (var reader = cmd.ExecuteReader())
+                            if (reader.Read())
                                 hospitalName = reader["ProviderName"] != DBNull.Value ? reader["ProviderName"].ToString().Trim() : null;
-                                documentDate = reader["DocumentDate"] != DBNull.Value ? reader["DocumentDate"].ToString().Trim() : null;
-                                dischargeDate = reader["DischargeDate"] != DBNull.Value ? reader["DischargeDate"].ToString().Trim() : null;
+                    }
+
+                    // Document date + discharge date — try Claimsdetails first, then Claimsdetail
+                    foreach (var tbl in new[] { "Claimsdetails", "Claimsdetail" })
+                    {
+                        try
+                        {
+                            using (var cmd = conn.CreateCommand())
+                            {
+                                cmd.CommandText = string.Format(@"
+                                    SELECT TOP 1
+                                        CONVERT(VARCHAR(10), dateofbill, 23)       AS DocumentDate,
+                                        CONVERT(VARCHAR(10), dateofdischarge, 23)  AS DischargeDate
+                                    FROM {0} WITH (NOLOCK)
+                                    WHERE ClaimID = @ClaimID
+                                      AND ISNULL(Deleted,0) = 0
+                                    ORDER BY SlNo DESC", tbl);
+                                cmd.Parameters.AddWithValue("@ClaimID", numericClaimId);
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    if (reader.Read())
+                                    {
+                                        documentDate  = reader["DocumentDate"]  != DBNull.Value ? reader["DocumentDate"].ToString().Trim()  : null;
+                                        dischargeDate = reader["DischargeDate"] != DBNull.Value ? reader["DischargeDate"].ToString().Trim()  : null;
+                                        break;
+                                    }
+                                }
                             }
                         }
+                        catch { /* try next table */ }
                     }
                 }
 
