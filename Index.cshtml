@@ -8519,6 +8519,23 @@
                     if (presentingComplaint) {
                         $('#txtPresentComplaint').val(presentingComplaint).trigger('change');
                     }
+
+                    // Probable Line of Treatment → ddlHospTreatmentType
+                    // Find option whose text contains the keyword (Surgical / Medical)
+                    var hospTreatmentKeyword = event.data.hospTreatmentKeyword || '';
+                    if (hospTreatmentKeyword) {
+                        var $hospDdl = $('#ddlHospTreatmentType');
+                        if (!$hospDdl.val() || $hospDdl.val() === '0' || $hospDdl.val() === '') {
+                            var matchedVal = null;
+                            $hospDdl.find('option').each(function () {
+                                if ($(this).text().toLowerCase().indexOf(hospTreatmentKeyword) !== -1) {
+                                    matchedVal = $(this).val();
+                                    return false; // break
+                                }
+                            });
+                            if (matchedVal) $hospDdl.val(matchedVal).trigger('change');
+                        }
+                    }
                 }
             });
 
