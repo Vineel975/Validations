@@ -8497,6 +8497,7 @@
                     var diagnosis            = event.data.diagnosis            || '';
                     var lineOfTreatment      = event.data.lineOfTreatment      || '';
                     var presentingComplaint  = event.data.presentingComplaint  || '';
+                    var hospTreatmentKeyword = event.data.hospTreatmentKeyword || '';
 
                     // Probable Diagnosis → txtProbableDiagnosis
                     if (diagnosis) {
@@ -8515,14 +8516,12 @@
                         }
                     }
 
-                    // Presenting Complaint → txtPresentComplaint (always overwrite with user input)
+                    // Presenting Complaint → txtPresentComplaint
                     if (presentingComplaint) {
                         $('#txtPresentComplaint').val(presentingComplaint).trigger('change');
                     }
 
                     // Probable Line of Treatment → ddlHospTreatmentType
-                    // Find option whose text contains the keyword (Surgical / Medical)
-                    var hospTreatmentKeyword = event.data.hospTreatmentKeyword || '';
                     if (hospTreatmentKeyword) {
                         var $hospDdl = $('#ddlHospTreatmentType');
                         if (!$hospDdl.val() || $hospDdl.val() === '0' || $hospDdl.val() === '') {
@@ -8530,12 +8529,20 @@
                             $hospDdl.find('option').each(function () {
                                 if ($(this).text().toLowerCase().indexOf(hospTreatmentKeyword) !== -1) {
                                     matchedVal = $(this).val();
-                                    return false; // break
+                                    return false;
                                 }
                             });
                             if (matchedVal) $hospDdl.val(matchedVal).trigger('change');
                         }
                     }
+
+                    // Auto-save: click the Hospitalization Details save button after fields are populated
+                    setTimeout(function () {
+                        var $saveBtn = $('#btnHospDetailsSave');
+                        if ($saveBtn.length && !$saveBtn.is(':disabled')) {
+                            $saveBtn.trigger('click');
+                        }
+                    }, 500);
                 }
             });
 
