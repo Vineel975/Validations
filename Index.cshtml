@@ -8536,9 +8536,40 @@
                         }
                     }
 
-                    // Auto-save: trigger the (already-intercepted) save button
+                    // Auto-save: call dedicated ClaimAI endpoint — no page refresh
                     setTimeout(function () {
-                        $('#btnHospDetailsSave').trigger('click');
+                        var hospTypeId = $('#ddlHospTreatmentType').val() || '';
+                        $.ajax({
+                            url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
+                            type: 'POST',
+                            data: {
+                                claimId:                 $('#hdnClaimID').val(),
+                                slNo:                    $('#hdnClaimSlNo').val(),
+                                probableDiagnosis:       $('#txtProbableDiagnosis').val(),
+                                probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
+                                presentComplaint:        $('#txtPresentComplaint').val(),
+                                hospTreatmentTypeId:     hospTypeId
+                            },
+                            success: function (res) {
+                                if (res && res.success) {
+                                    var $toast = $('<div/>')
+                                        .text('✓ Hospitalization details saved')
+                                        .css({
+                                            position: 'fixed', bottom: '20px', right: '20px',
+                                            background: '#3c763d', color: '#fff',
+                                            padding: '8px 14px', borderRadius: '4px',
+                                            fontSize: '13px', zIndex: 99999,
+                                            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                                        }).appendTo('body');
+                                    setTimeout(function () {
+                                        $toast.fadeOut(400, function () { $toast.remove(); });
+                                    }, 2500);
+                                }
+                            },
+                            error: function () {
+                                console.warn('[ClaimAI] Clinical details auto-save failed.');
+                            }
+                        });
                     }, 500);
                 }
             });
@@ -8658,61 +8689,6 @@
 
 
             $(document).ready(function () {
-
-                // ── ClaimAI: intercept btnHospDetailsSave to save without page refresh ──
-                // Wait for the partial view to render the button, then intercept its click
-                var _hospSaveIntercepted = false;
-                function interceptHospSave() {
-                    var $btn = $('#btnHospDetailsSave');
-                    if (!$btn.length || _hospSaveIntercepted) return;
-                    _hospSaveIntercepted = true;
-
-                    // Wrap the existing onclick with an AJAX version
-                    $btn.on('click.claimai', function (e) {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-
-                        var $form = $btn.closest('form');
-                        if (!$form.length) $form = $('#form');
-                        if (!$form.length) {
-                            // No form found — let original handler run
-                            return true;
-                        }
-
-                        var formData = $form.serialize();
-
-                        $.ajax({
-                            url: $form.attr('action') || window.location.pathname,
-                            type: 'POST',
-                            data: formData,
-                            success: function () {
-                                // Show brief green toast
-                                var $toast = $('<div/>')
-                                    .text('✓ Hospitalization details saved')
-                                    .css({
-                                        position: 'fixed', bottom: '20px', right: '20px',
-                                        background: '#3c763d', color: '#fff',
-                                        padding: '8px 14px', borderRadius: '4px',
-                                        fontSize: '13px', zIndex: 99999,
-                                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
-                                    })
-                                    .appendTo('body');
-                                setTimeout(function () {
-                                    $toast.fadeOut(400, function () { $toast.remove(); });
-                                }, 2500);
-                            },
-                            error: function () {
-                                console.warn('[ClaimAI] Hospitalization auto-save failed.');
-                            }
-                        });
-
-                        return false;
-                    });
-                }
-
-                // Try immediately and also after a short delay (partial view may load late)
-                interceptHospSave();
-                setTimeout(interceptHospSave, 2000);
 
                 $("#btnSaveBimaSatarDetails").on('click', function (e) {
                     $("#hndSRF_ID_on_Covid_Report").val($("#txtSRF_ID_on_Covid_Report").val())
