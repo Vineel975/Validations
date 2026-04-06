@@ -7683,8 +7683,7 @@ namespace Enrollment.Controllers
         /// </summary>
         [HttpPost]
         public ActionResult SaveClinicalDetailsForClaimAI(
-            string claimId,
-            string slNo,
+            string claimDetailsId,
             string probableDiagnosis,
             string probableLineOfTreatment,
             string presentComplaint,
@@ -7695,11 +7694,9 @@ namespace Enrollment.Controllers
                 if (Session[SessionValue.UserRegionID] == null)
                     return Json(new { success = false, message = "Session expired" });
 
-                long numericClaimId;
-                int  numericSlNo;
-                if (!long.TryParse((claimId ?? "").Trim(), out numericClaimId) ||
-                    !int.TryParse((slNo   ?? "").Trim(), out numericSlNo))
-                    return Json(new { success = false, message = "Invalid ClaimID or SlNo" });
+                long numericId;
+                if (!long.TryParse((claimDetailsId ?? "").Trim(), out numericId) || numericId <= 0)
+                    return Json(new { success = false, message = "Invalid ClaimDetailsId: " + claimDetailsId });
 
                 string connStr = System.Configuration.ConfigurationManager
                                        .ConnectionStrings["McarePlusEntities"]
@@ -7713,6 +7710,7 @@ namespace Enrollment.Controllers
                 }
 
                 int rowsAffected = 0;
+                string lastError = "";
                 foreach (var tbl in new[] { "Claimsdetails", "Claimsdetail" })
                 {
                     try
@@ -7721,7 +7719,13 @@ namespace Enrollment.Controllers
                         {
                             conn.Open();
 
-                            // Build SET clause only for non-null fields
+                            // First verify row exists
+                            var checkCmd = conn.CreateCommand();
+                            checkCmd.CommandText = string.Format("SELECT COUNT(1) FROM {0} WHERE ID = @ID AND ISNULL(Deleted,0) = 0", tbl);
+                            checkCmd.Parameters.AddWithValue("@ID", numericId);
+                            int exists = (int)checkCmd.ExecuteScalar();
+                            if (exists == 0) continue; // try next table
+
                             var setClauses = new System.Collections.Generic.List<string>();
                             var cmd = conn.CreateCommand();
 
@@ -7743,7 +7747,7 @@ namespace Enrollment.Controllers
                             if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
                             {
                                 int typeId;
-                                if (int.TryParse(hospTreatmentTypeId.Trim(), out typeId))
+                                if (int.TryParse(hospTreatmentTypeId.Trim(), out typeId) && typeId > 0)
                                 {
                                     setClauses.Add("HospTreatmentTypeID = @HospTreatmentTypeID");
                                     cmd.Parameters.AddWithValue("@HospTreatmentTypeID", typeId);
@@ -7754,20 +7758,19 @@ namespace Enrollment.Controllers
                                 return Json(new { success = true, message = "Nothing to update" });
 
                             cmd.CommandText = string.Format(
-                                "UPDATE {0} SET {1} WHERE ClaimID = @ClaimID AND SlNo = @SlNo AND ISNULL(Deleted,0) = 0",
+                                "UPDATE {0} SET {1} WHERE ID = @ID AND ISNULL(Deleted,0) = 0",
                                 tbl,
                                 string.Join(", ", setClauses));
-                            cmd.Parameters.AddWithValue("@ClaimID", numericClaimId);
-                            cmd.Parameters.AddWithValue("@SlNo",    numericSlNo);
+                            cmd.Parameters.AddWithValue("@ID", numericId);
 
                             rowsAffected = cmd.ExecuteNonQuery();
-                            if (rowsAffected > 0) break; // updated — stop trying tables
+                            if (rowsAffected > 0) break;
                         }
                     }
-                    catch { /* try next table name */ }
+                    catch (Exception ex) { lastError = ex.Message; }
                 }
 
-                return Json(new { success = true, rowsAffected = rowsAffected });
+                return Json(new { success = rowsAffected > 0, rowsAffected = rowsAffected, error = lastError });
             }
             catch (Exception ex)
             {
