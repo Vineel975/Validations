@@ -7587,6 +7587,13 @@
 
     MasterData.BasicData=@Html.Raw(Json.Encode(ViewData["BasicData"]));
     var basicData=JSON.parse(MasterData.BasicData);
+    // [ClaimAI debug] Log basicData keys to find actual DB column names for clinical fields
+    if (basicData && basicData[0]) {
+        var keys = Object.keys(basicData[0]).filter(function(k) {
+            return /diag|treat|complaint|hosp|present|line|prob/i.test(k);
+        });
+        console.log('[ClaimAI] basicData clinical columns:', keys);
+    }
     MasterData.ServiceData =@Html.Raw(Json.Encode(ViewData["ServiceData"]));
     MasterData.CoverageType =@Html.Raw(Json.Encode(HttpContext.Current.Application["Coverage Type"]))
     var dtClaimsCoverageData= @Html.Raw(Json.Encode(ViewData["dtClaimsCoverageData"]));
@@ -8541,12 +8548,6 @@
                         var claimDetailsId = $('#hdnClaimDetailsID').val() || '';
                         var hospTypeId     = $('#ddlHospTreatmentType').val() || '';
 
-                        console.log('[ClaimAI] Saving clinical details. ClaimDetailsID:', claimDetailsId,
-                            'Diagnosis:', $('#txtProbableDiagnosis').val(),
-                            'Treatment:', $('#txtProbableLineOfTreatment').val(),
-                            'Complaint:', $('#txtPresentComplaint').val(),
-                            'HospType:', hospTypeId);
-
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
                             type: 'POST',
@@ -8558,7 +8559,6 @@
                                 hospTreatmentTypeId:     hospTypeId
                             },
                             success: function (res) {
-                                console.log('[ClaimAI] Save result:', res);
                                 if (res && res.success) {
                                     var $toast = $('<div/>')
                                         .text('✓ Hospitalization details saved')
@@ -8572,8 +8572,6 @@
                                     setTimeout(function () {
                                         $toast.fadeOut(400, function () { $toast.remove(); });
                                     }, 2500);
-                                } else {
-                                    console.warn('[ClaimAI] Save returned failure:', res);
                                 }
                             },
                             error: function (xhr) {
