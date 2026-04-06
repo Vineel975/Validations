@@ -124,104 +124,6 @@ function SaveDropdown({
   );
 }
 
-// ── Case Summary Section ─────────────────────────────────────────────────────
-function CaseSummarySection({
-  displayAnalysis,
-  finalInsurerPayable,
-  formatAmountValue,
-  hospitalAmount,
-  tariffExtractionItem,
-  benefitAmount,
-  bsiCappedPayable,
-}: {
-  displayAnalysis: PdfAnalysis | null | undefined;
-  finalInsurerPayable?: number | null;
-  formatAmountValue: (v?: number | null) => string;
-  hospitalAmount?: number;
-  tariffExtractionItem?: TariffBreakdownItem[] | null;
-  benefitAmount?: number | null;
-
-  bsiCappedPayable?: number | null;
-}) {
-  const diagnosis   = displayAnalysis?.medicalAdmissibility?.diagnosis ?? null;
-  const patientName = displayAnalysis?.patientName?.value;
-  const hospital    = displayAnalysis?.hospitalName?.value;
-  const admDate     = displayAnalysis?.admissionDate?.value;
-  const disDate     = displayAnalysis?.dischargeDate?.value;
-
-  const tariffTotal = Array.isArray(tariffExtractionItem)
-    ? tariffExtractionItem.reduce((s, i) => s + (i.amount ?? 0), 0) : null;
-
-  const fmt = (v: number | null | undefined) =>
-    v != null ? `INR ${formatAmountValue(v)}` : "—";
-
-  const missingTests = ((displayAnalysis?.medicalAdmissibility as { conditionTests?: Array<{ testName: string; status: string }> } | null | undefined)
-    ?.conditionTests ?? []).filter((t) => t.status === "missing");
-
-  const approvedAmount = bsiCappedPayable ?? finalInsurerPayable;
-
-  // Build one-line explanation
-  const explanationParts: string[] = [];
-  if (hospitalAmount != null && tariffTotal != null && hospitalAmount > tariffTotal)
-    explanationParts.push(`bill (${fmt(hospitalAmount)}) exceeds tariff (${fmt(tariffTotal)})`);
-  if (tariffTotal != null && benefitAmount != null && tariffTotal > benefitAmount)
-    explanationParts.push(`tariff (${fmt(tariffTotal)}) exceeds benefit limit (${fmt(benefitAmount)})`);
-  const explanation = explanationParts.length
-    ? `Approving ${fmt(approvedAmount)} because ${explanationParts.join("; ")}.`
-    : `Approving ${fmt(approvedAmount)} — within all applicable limits.`;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Case Summary</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm">
-        {/* Patient & Claim Info */}
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-          {patientName && <div><span className="font-medium text-gray-500">Patient: </span><span className="text-gray-900">{String(patientName)}</span></div>}
-          {hospital    && <div><span className="font-medium text-gray-500">Hospital: </span><span className="text-gray-900">{String(hospital)}</span></div>}
-          {admDate     && <div><span className="font-medium text-gray-500">Admission: </span><span className="text-gray-900">{String(admDate)}</span></div>}
-          {disDate     && <div><span className="font-medium text-gray-500">Discharge: </span><span className="text-gray-900">{String(disDate)}</span></div>}
-        </div>
-
-        {/* Diagnosis */}
-        {diagnosis && (
-          <div className="rounded-md bg-blue-50 border border-blue-200 p-3">
-            <div className="font-semibold text-blue-800 mb-1">Diagnosis / Problem</div>
-            <div className="text-blue-900">{diagnosis}</div>
-          </div>
-        )}
-
-        {/* Missing investigations */}
-        {missingTests.length > 0 && (
-          <div className="space-y-1">
-            {missingTests.map((t, i) => (
-              <div key={i} className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                <span className="mt-0.5">⚠</span>
-                <span><span className="font-medium">{t.testName}</span> is missing in the provided medical documents.</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Amount Details */}
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-2">
-          <div className="font-semibold text-gray-800 mb-2">Amount Details</div>
-          <div className="flex justify-between"><span className="text-gray-600">Total Medical Bill</span><span className="font-medium">{fmt(hospitalAmount)}</span></div>
-          <div className="flex justify-between"><span className="text-gray-600">Tariff Amount</span><span className="font-medium">{fmt(tariffTotal)}</span></div>
-          <div className="flex justify-between"><span className="text-gray-600">Benefit Plan Limit</span><span className="font-medium">{fmt(benefitAmount)}</span></div>
-          <div className="border-t border-gray-300 pt-2 flex justify-between font-bold text-gray-900">
-            <span>Amount Approved</span><span className="text-emerald-700">{fmt(approvedAmount)}</span>
-          </div>
-          <div className="text-xs text-gray-500 italic pt-1">{explanation}</div>
-        </div>
-
-
-      </CardContent>
-    </Card>
-  );
-}
-
 export function ResultView({
   hospitalBill,
   tariffFile,
@@ -250,7 +152,6 @@ export function ResultView({
   });
   const reportSections = useMemo(
     () => [
-      { id: "caseSummary", label: "Case Summary" },
       { id: "patient", label: "Patient Info" },
       { id: "medicalAdmissibility", label: "Medical Admissibility" },
       { id: "financialSummary", label: "Summary" },
@@ -1133,23 +1034,6 @@ export function ResultView({
                 ref={reportScrollRef}
                 className="flex-1 overflow-y-auto scroll-smooth scroll-pt-0 px-3 pb-8 pt-3"
               >
-                <section id="caseSummary" className="py-2">
-                  <CaseSummarySection
-                    displayAnalysis={displayAnalysis}
-                    finalInsurerPayable={finalInsurerPayable}
-                    formatAmountValue={formatAmountValue}
-                    hospitalAmount={financialSummaryTotals?.hospitalBillAfterDiscount}
-                    tariffExtractionItem={displayAnalysis?.tariffExtractionItem}
-                    benefitAmount={claimCalculation?.benefitAmount ?? displayAnalysis?.benefitAmount}
-                    bsiCappedPayable={
-                      (() => {
-                        const ta = claimCalculation?.totalAmountApproved ?? finalInsurerPayable ?? null;
-                        return ta;
-                      })()
-                    }
-                  />
-                </section>
-
                 <section id="patient" className="py-2">
                   <PatientInfoTab
                     fileName={fileName}
