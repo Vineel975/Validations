@@ -8873,6 +8873,8 @@
 
                                 var billAmt = parseFloat($('#txtTotalServicesBillAmount').val()) || 0;
 
+                                console.log('[ClaimAI] Existing row keys:', existingRows.length > 0 ? Object.keys(existingRows[0]) : 'none');
+
                                 if (existingRows.length > 0) {
                                     // Use first existing row as schema template — update its ICD/Procedure fields
                                     var row = $.extend({}, existingRows[0]);
