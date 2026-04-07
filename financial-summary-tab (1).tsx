@@ -212,11 +212,66 @@ export function FinancialSummaryTab({
     }, 0);
   };
 
-  // Editable amounts — null means use extracted value
-  const [editedClaimedAmount, setEditedClaimedAmount] = useState<string | null>(null);
-  const [editedTariffAmount, setEditedTariffAmount]   = useState<string | null>(null);
-  const [isEditingClaimed, setIsEditingClaimed]       = useState(false);
-  const [isEditingTariff, setIsEditingTariff]         = useState(false);
+  // ── Editable breakdown rows ───────────────────────────────────────────────
+  type EditableRow = { id: string; name: string; amount: string };
+
+  const toEditableRows = (items: HospitalBillBreakdownItem[]): EditableRow[] =>
+    items.map((item, i) => ({
+      id: `h-${i}`,
+      name: item.name ?? "",
+      amount: item.amount != null ? String(item.amount) : "",
+    }));
+
+  const toEditableTariffRows = (items: TariffBreakdownItem[]): EditableRow[] =>
+    items.map((item, i) => ({
+      id: `t-${i}`,
+      name: item.name ?? "",
+      amount: item.amount != null ? String(item.amount) : "",
+    }));
+
+  const [hospitalRows, setHospitalRows] = useState<EditableRow[]>([]);
+  const [tariffRows, setTariffRows]     = useState<EditableRow[]>([]);
+  const [hospitalInit, setHospitalInit] = useState(false);
+  const [tariffInit, setTariffInit]     = useState(false);
+
+  // Initialise from props once data arrives
+  useEffect(() => {
+    if (!hospitalInit && Array.isArray(hospitalBillBreakdown) && hospitalBillBreakdown.length > 0) {
+      setHospitalRows(toEditableRows(hospitalBillBreakdown));
+      setHospitalInit(true);
+    }
+  }, [hospitalBillBreakdown, hospitalInit]);
+
+  useEffect(() => {
+    const tariffSrc = Array.isArray(tariffExtractionItem) ? tariffExtractionItem : [];
+    if (!tariffInit && tariffSrc.length > 0) {
+      setTariffRows(toEditableTariffRows(tariffSrc));
+      setTariffInit(true);
+    }
+  }, [tariffExtractionItem, tariffInit]);
+
+  // Computed totals from editable rows
+  const hospitalRowsTotal = hospitalRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const tariffRowsTotal   = tariffRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+
+  const addHospitalRow = () =>
+    setHospitalRows(rows => [...rows, { id: `h-${Date.now()}`, name: "", amount: "" }]);
+  const addTariffRow = () =>
+    setTariffRows(rows => [...rows, { id: `t-${Date.now()}`, name: "", amount: "" }]);
+
+  const updateHospitalRow = (id: string, field: "name" | "amount", val: string) =>
+    setHospitalRows(rows => rows.map(r => r.id === id ? { ...r, [field]: val } : r));
+  const updateTariffRow = (id: string, field: "name" | "amount", val: string) =>
+    setTariffRows(rows => rows.map(r => r.id === id ? { ...r, [field]: val } : r));
+
+  const deleteHospitalRow = (id: string) =>
+    setHospitalRows(rows => rows.filter(r => r.id !== id));
+  const deleteTariffRow = (id: string) =>
+    setTariffRows(rows => rows.filter(r => r.id !== id));
+
+  // Manual overrides (kept for backward compat with onAmountsChange)
+  const [editedClaimedAmount] = useState<string | null>(null);
+  const [editedTariffAmount]  = useState<string | null>(null);
 
   const hospitalAmount = normalizeAmount(financialSummaryTotals.hospitalBillAfterDiscount);
   const benefitTotal = normalizeAmount(benefitAmount);
@@ -226,12 +281,14 @@ export function FinancialSummaryTab({
   );
   const effectiveTariffTotal = tariffItems.length > 0 ? tariffItemsTotal : null;
 
-  // Effective amounts — use edited values if set, else extracted
-  const effectiveClaimedAmount = editedClaimedAmount !== null
-    ? (parseFloat(editedClaimedAmount) || 0)
+  // Effective amounts — row totals take priority, then manual edit, then extracted
+  const effectiveClaimedAmount =
+    hospitalInit && hospitalRows.length > 0 ? hospitalRowsTotal
+    : editedClaimedAmount !== null ? (parseFloat(editedClaimedAmount) || 0)
     : hospitalAmount;
-  const effectiveTariffAmount = editedTariffAmount !== null
-    ? (parseFloat(editedTariffAmount) || 0)
+  const effectiveTariffAmount =
+    tariffInit && tariffRows.length > 0 ? tariffRowsTotal
+    : editedTariffAmount !== null ? (parseFloat(editedTariffAmount) || 0)
     : effectiveTariffTotal;
   const tariffLensAmount = sumLensAmountFromTariff(tariffItems);
   const hospitalLensAmount = sumLensAmountFromHospital(hospitalBillBreakdown);
@@ -353,17 +410,47 @@ export function FinancialSummaryTab({
                   </button>
                 )}
               </div>
-              <div className="space-y-2">
-                {Array.isArray(hospitalBillBreakdown) && hospitalBillBreakdown.length > 0 ? (
-                  hospitalBillBreakdown.map((item, idx) => (
-                    <div key={`hospital-breakdown-${idx}`} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700">{item.name}</span>
-                      <span className="font-medium text-gray-900">{formatAmountValue(item.amount)}</span>
-                    </div>
-                  ))
-                ) : (
+              <div className="space-y-1">
+                {(hospitalRows.length > 0 ? hospitalRows : []).map((row) => (
+                  <div key={row.id} className="flex items-center gap-1 text-sm group">
+                    <input
+                      className="flex-1 min-w-0 border border-transparent group-hover:border-gray-300 rounded px-1 py-0.5 text-gray-700 bg-transparent focus:border-blue-400 focus:bg-white outline-none text-sm"
+                      value={row.name}
+                      placeholder="Item name"
+                      onChange={(e) => updateHospitalRow(row.id, "name", e.target.value)}
+                    />
+                    <input
+                      className="w-24 text-right border border-transparent group-hover:border-gray-300 rounded px-1 py-0.5 font-medium text-gray-900 bg-transparent focus:border-blue-400 focus:bg-white outline-none text-sm"
+                      value={row.amount}
+                      placeholder="0"
+                      type="number"
+                      onChange={(e) => updateHospitalRow(row.id, "amount", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => deleteHospitalRow(row.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 px-1 text-xs transition-opacity"
+                      title="Delete row"
+                    >✕</button>
+                  </div>
+                ))}
+                {hospitalRows.length === 0 && !hospitalInit && hospitalAmount !== null && (
                   <div className="text-sm text-gray-700">Amount: {formatDisplayAmount(hospitalAmount)}</div>
                 )}
+                {/* Total row */}
+                {hospitalRows.length > 0 && (
+                  <div className="flex items-center justify-between text-sm font-semibold border-t border-gray-200 pt-1 mt-1">
+                    <span className="text-gray-700">Total</span>
+                    <span className="text-gray-900">{formatDisplayAmount(hospitalRowsTotal)}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={addHospitalRow}
+                  className="mt-1 text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <span>＋</span> Add row
+                </button>
               </div>
             </CardContent>
           </Card>
@@ -380,34 +467,46 @@ export function FinancialSummaryTab({
                 )}
               </div>
               <div className="space-y-1 border-t border-green-200 pt-2">
-                {tariffItems.length > 0 ? (
-                  tariffItems.map((item, idx) => {
-                    const amountStr = formatAmountValue(item.amount);
-                    const clickable = tariffLinkable && item.amount != null;
-                    return (
-                      <div
-                        key={`tariff-breakdown-${idx}`}
-                        className={`flex items-center justify-between text-sm rounded px-1 py-0.5 ${
-                          clickable
-                            ? "cursor-pointer hover:bg-green-100 transition-colors"
-                            : ""
-                        }`}
-                        onClick={() => {
-                          if (clickable && onTariffAmountClick) {
-                            onTariffAmountClick(tariffPageNumber, amountStr, item.name);
-                          }
-                        }}
-                      >
-                        <span className="text-green-700">{item.name}</span>
-                        <span className={`font-medium text-green-900 ${clickable ? "underline decoration-dotted" : ""}`}>
-                          {amountStr}
-                        </span>
-                      </div>
-                    );
-                  })
-                ) : (
+                {tariffRows.map((row) => (
+                  <div key={row.id} className="flex items-center gap-1 text-sm group">
+                    <input
+                      className="flex-1 min-w-0 border border-transparent group-hover:border-green-300 rounded px-1 py-0.5 text-green-700 bg-transparent focus:border-blue-400 focus:bg-white outline-none text-sm"
+                      value={row.name}
+                      placeholder="Item name"
+                      onChange={(e) => updateTariffRow(row.id, "name", e.target.value)}
+                    />
+                    <input
+                      className="w-24 text-right border border-transparent group-hover:border-green-300 rounded px-1 py-0.5 font-medium text-green-900 bg-transparent focus:border-blue-400 focus:bg-white outline-none text-sm"
+                      value={row.amount}
+                      placeholder="0"
+                      type="number"
+                      onChange={(e) => updateTariffRow(row.id, "amount", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => deleteTariffRow(row.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 px-1 text-xs transition-opacity"
+                      title="Delete row"
+                    >✕</button>
+                  </div>
+                ))}
+                {tariffRows.length === 0 && (
                   <div className="text-sm text-green-700">—</div>
                 )}
+                {/* Total row */}
+                {tariffRows.length > 0 && (
+                  <div className="flex items-center justify-between text-sm font-semibold border-t border-green-200 pt-1 mt-1">
+                    <span className="text-green-700">Total</span>
+                    <span className="text-green-900">{formatDisplayAmount(tariffRowsTotal)}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={addTariffRow}
+                  className="mt-1 text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <span>＋</span> Add row
+                </button>
               </div>
             </CardContent>
           </Card>
@@ -549,56 +648,26 @@ export function FinancialSummaryTab({
           <h3 className="text-lg font-semibold text-gray-900">APPROVALS</h3>
           <div className="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2">
             {/* Three breakdown lines */}
-            {/* Total Medical Bill — editable */}
+            {/* Total Medical Bill — reflects editable breakdown rows */}
             <div className="flex items-center justify-between py-1 border-b border-gray-200">
               <span className="text-sm text-gray-600">Total Medical Bill</span>
-              {isEditingClaimed ? (
-                <input
-                  autoFocus
-                  type="number"
-                  className="w-32 text-right text-sm border border-blue-400 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
-                  value={editedClaimedAmount ?? (hospitalAmount?.toString() ?? "")}
-                  onChange={(e) => setEditedClaimedAmount(e.target.value)}
-                  onBlur={() => setIsEditingClaimed(false)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setIsEditingClaimed(false); }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => { setEditedClaimedAmount(editedClaimedAmount ?? (hospitalAmount?.toString() ?? "")); setIsEditingClaimed(true); }}
-                  className="text-sm text-gray-900 underline decoration-dotted cursor-pointer hover:text-blue-600 flex items-center gap-1"
-                  title="Click to edit"
-                >
-                  {formatDisplayAmount(effectiveClaimedAmount)}
-                  <span className="text-[10px] text-gray-400">✎</span>
-                </button>
-              )}
+              <span className="text-sm text-gray-900 font-medium">
+                {formatDisplayAmount(effectiveClaimedAmount)}
+                {hospitalInit && hospitalRows.length > 0 && (
+                  <span className="ml-1 text-[10px] text-blue-400">edited</span>
+                )}
+              </span>
             </div>
 
-            {/* Tariff Amount — editable */}
+            {/* Tariff Amount — reflects editable breakdown rows */}
             <div className="flex items-center justify-between py-1 border-b border-gray-200">
               <span className="text-sm text-gray-600">Tariff Amount</span>
-              {isEditingTariff ? (
-                <input
-                  autoFocus
-                  type="number"
-                  className="w-32 text-right text-sm border border-blue-400 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
-                  value={editedTariffAmount ?? (effectiveTariffTotal?.toString() ?? "")}
-                  onChange={(e) => setEditedTariffAmount(e.target.value)}
-                  onBlur={() => setIsEditingTariff(false)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setIsEditingTariff(false); }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => { setEditedTariffAmount(editedTariffAmount ?? (effectiveTariffTotal?.toString() ?? "")); setIsEditingTariff(true); }}
-                  className="text-sm text-gray-900 underline decoration-dotted cursor-pointer hover:text-blue-600 flex items-center gap-1"
-                  title="Click to edit"
-                >
-                  {effectiveTariffAmount !== null ? formatDisplayAmount(effectiveTariffAmount) : "—"}
-                  <span className="text-[10px] text-gray-400">✎</span>
-                </button>
-              )}
+              <span className="text-sm text-gray-900 font-medium">
+                {effectiveTariffAmount !== null ? formatDisplayAmount(effectiveTariffAmount) : "—"}
+                {tariffInit && tariffRows.length > 0 && (
+                  <span className="ml-1 text-[10px] text-blue-400">edited</span>
+                )}
+              </span>
             </div>
 
             {/* Benefit Plan Limit — read only */}
