@@ -436,29 +436,25 @@ export function MedicalAdmissibilityTab({
   const [icdDescriptions, setIcdDescriptions] = useState<Map<string, string>>(new Map());
   const [icdOptionsMap, setIcdOptionsMap] = useState<Map<string, IcdOption[]>>(new Map());
 
-  // Fetch ICD codes for conditions that appear in the data
+  // Auto-generate all 7 ICD levels from diagnosis text
   useEffect(() => {
     const fetchICDCodes = async () => {
       if (!medicalAdmissibility) return;
 
-      const diagnosisText = (medicalAdmissibility.diagnosis || "").toLowerCase();
+      const diagnosisText = (medicalAdmissibility.diagnosis || "").trim();
       const conditionTests =
         (medicalAdmissibility as { conditionTests?: ConditionTestCheck[] }).conditionTests || [];
       const fallbackCataractIcd = inferDefaultCataractIcdCode(medicalAdmissibility);
 
-      // AI-extracted ICD codes — levels 1-3 from AI extraction
-      const aiCodes: (string | null)[] = [
-        (medicalAdmissibility as { icdCode1?: string })?.icdCode1?.trim() || null,
-        (medicalAdmissibility as { icdCode2?: string })?.icdCode2?.trim() || null,
-        (medicalAdmissibility as { icdCode3?: string })?.icdCode3?.trim() || null,
-        null, null, null, null, // levels 4-7 start empty
-      ];
+      // AI-extracted code1 — use as override for the hierarchy lookup if available
+      const aiCode1 = (medicalAdmissibility as { icdCode1?: string })?.icdCode1?.trim() || null;
 
-      // ── Step 1: Find present conditions ──────────────────────────────────────
+      // ── Find present conditions (for conditionRows table) ─────────────────────
+      const diagLower = diagnosisText.toLowerCase();
       const presentConditions = new Set<string>();
       for (const rule of conditionRules) {
         const aiCondition = conditionTests.find((ct) => matchesConditionName(ct.condition, rule));
-        const matchedByDiagnosis = rule.diagnosisKeywords.some((kw) => diagnosisText.includes(kw));
+        const matchedByDiagnosis = rule.diagnosisKeywords.some((kw) => diagLower.includes(kw));
         if (aiCondition || matchedByDiagnosis) presentConditions.add(rule.key);
       }
       for (const ct of conditionTests) {
@@ -468,42 +464,54 @@ export function MedicalAdmissibilityTab({
         }
       }
       if (presentConditions.size === 0) {
-        presentConditions.add(diagnosisText.split(",")[0].trim() || "cataract");
+        presentConditions.add(diagLower.split(",")[0].trim() || "cataract");
       }
 
-      // ── Step 2: Fetch descriptions for AI codes ───────────────────────────────
-      const descResults = await Promise.all(
-        aiCodes.map((code) => code ? fetchICDDescription(code) : Promise.resolve(""))
-      );
-      const newDescMap = new Map<string, string>();
-      aiCodes.forEach((code, i) => { if (code) newDescMap.set(code, descResults[i]); });
-      setIcdDescriptions(newDescMap);
+      // ── Auto-generate 7 levels ────────────────────────────────────────────────
+      // Strategy 1: if aiCode1 is available, use hierarchy endpoint
+      // Strategy 2: use diagnosis text with diagnosis endpoint
+      let slots: Array<{ code: string; description: string; level: number } | null> = Array(7).fill(null);
 
-      // ── Step 3: Build icdCodeMap — Code-1 per condition ──────────────────────
+      try {
+        let hierarchyUrl: string;
+        if (aiCode1) {
+          hierarchyUrl = `/api/icd?hierarchy=${encodeURIComponent(aiCode1)}`;
+        } else {
+          hierarchyUrl = `/api/icd?diagnosis=${encodeURIComponent(diagnosisText)}`;
+        }
+        const res = await fetch(hierarchyUrl);
+        if (res.ok) {
+          const data = await res.json() as { slots: typeof slots };
+          slots = data.slots ?? Array(7).fill(null);
+        }
+      } catch { /* use empty slots */ }
+
+      // ── Seed icdCodeMap for conditionRows ─────────────────────────────────────
       const newIcdCodeMap = new Map<string, string>();
-      await Promise.all(
-        Array.from(presentConditions).map(async (conditionKey) => {
-          const rule = conditionRules.find((r) => r.key === conditionKey);
-          const code =
-            aiCodes[0] ||
-            (await fetchICDCode(rule?.label || conditionKey)) ||
-            (rule?.key === "cataract" ? fallbackCataractIcd : undefined) ||
-            rule?.icdCode || null;
-          if (code) newIcdCodeMap.set(conditionKey, code);
-        })
-      );
+      const code1 = slots[0]?.code || aiCode1 || null;
+      if (code1) Array.from(presentConditions).forEach((k) => newIcdCodeMap.set(k, code1));
+
+      // Fallback for cataract if nothing found
+      if (newIcdCodeMap.size === 0) {
+        const fallback = aiCode1 || fallbackCataractIcd || (await fetchICDCode(diagLower.split(",")[0].trim()));
+        if (fallback) Array.from(presentConditions).forEach((k) => newIcdCodeMap.set(k, fallback || ""));
+      }
       setIcdCodeMap(newIcdCodeMap);
 
-      // ── Step 4: Seed 7 level maps from AI codes ───────────────────────────────
-      const newLevels = Array.from({ length: 7 }, (_, i) => {
+      // ── Build icdDescriptions from slots ─────────────────────────────────────
+      const newDescMap = new Map<string, string>();
+      slots.forEach((slot) => { if (slot) newDescMap.set(slot.code, slot.description); });
+      setIcdDescriptions(newDescMap);
+
+      // ── Seed all 7 level maps ─────────────────────────────────────────────────
+      const newLevels = slots.map((slot) => {
         const m = new Map<string, string>();
-        const aiCode = i === 0 ? (aiCodes[0] || newIcdCodeMap.get(Array.from(presentConditions)[0] || "") || "") : (aiCodes[i] || "");
-        if (aiCode) Array.from(presentConditions).forEach((k) => m.set(k, aiCode));
+        if (slot) Array.from(presentConditions).forEach((k) => m.set(k, slot.code));
         return m;
       });
       setIcdLevels(newLevels);
 
-      // ── Step 5: Build options map ─────────────────────────────────────────────
+      // ── Build options map for search fallback ─────────────────────────────────
       const newOptionsMap = new Map<string, IcdOption[]>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
