@@ -588,8 +588,10 @@ export function ResultView({
   }, [state?.claimId]);
 
   const sendAccommodationToSpectra = async () => {
+    console.log("[ClaimAI] sendAccommodationToSpectra called, isIframe:", window.parent !== window);
+    try {
     if (!(window.parent && window.parent !== window)) {
-      // Not running inside an iframe — nothing to do
+      console.warn("[ClaimAI] Not in iframe, skipping postMessage");
       return;
     }
 
@@ -649,6 +651,7 @@ export function ResultView({
     // Use insurerPayable from claimCalculation as the eligible amount
     const eligibleAmount = claimCalculation?.insurerPayable ?? 0;
 
+    console.log("[ClaimAI] About to postMessage setClinicalDetails:", { diagnosis, lineOfTreatment, presentingComplaint: presentingComplaint.trim(), hospTreatmentKeyword, eligibleAmount, icdSlotsCount: icdSlots.length });
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
       window.parent.postMessage(
         {
@@ -664,6 +667,9 @@ export function ResultView({
         },
         "*",
       );
+    }
+    } catch(e) {
+      console.error("[ClaimAI] sendAccommodationToSpectra error:", e);
     }
   };
 
