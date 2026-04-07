@@ -1147,6 +1147,7 @@ export function ResultView({
                     }}
                     onTariffAmountClick={handleScrollToTariffPage}
                     claimId={state?.claimId}
+                    memberPolicyId={(spectraFields?.memberPolicyId as string | undefined) ?? undefined}
                     onAmountsChange={(claimed, tariff, approved) =>
                       setEditedAmounts({ claimed, tariff, approved })
                     }
