@@ -39,6 +39,8 @@ interface FinancialSummaryTabProps {
   onTariffAmountClick?: (pageNumber?: number | null, highlightText?: string, highlightName?: string) => void;
   /** Passed from result-view — same claimId used by benefit-plan and patient-info tabs */
   claimId?: string;
+  /** Called when user edits claimed/tariff amounts so parent can use updated approved amount */
+  onAmountsChange?: (claimedAmount: number | null, tariffAmount: number | null, approvedAmount: number | null) => void;
 }
 
 export function FinancialSummaryTab({
@@ -61,6 +63,7 @@ export function FinancialSummaryTab({
   tariffPageNumber,
   onTariffAmountClick,
   claimId,
+  onAmountsChange,
 }: FinancialSummaryTabProps) {
 
   // ── BSI state — fetched client-side via /api/bsi (runs on localhost:3000) ──
@@ -209,6 +212,12 @@ export function FinancialSummaryTab({
     }, 0);
   };
 
+  // Editable amounts — null means use extracted value
+  const [editedClaimedAmount, setEditedClaimedAmount] = useState<string | null>(null);
+  const [editedTariffAmount, setEditedTariffAmount]   = useState<string | null>(null);
+  const [isEditingClaimed, setIsEditingClaimed]       = useState(false);
+  const [isEditingTariff, setIsEditingTariff]         = useState(false);
+
   const hospitalAmount = normalizeAmount(financialSummaryTotals.hospitalBillAfterDiscount);
   const benefitTotal = normalizeAmount(benefitAmount);
   const tariffItems = Array.isArray(tariffExtractionItem) ? tariffExtractionItem : [];
@@ -216,6 +225,25 @@ export function FinancialSummaryTab({
     (sum, item) => sum + (normalizeAmount(item.amount) ?? 0), 0,
   );
   const effectiveTariffTotal = tariffItems.length > 0 ? tariffItemsTotal : null;
+
+  // Effective amounts — use edited values if set, else extracted
+  const effectiveClaimedAmount = editedClaimedAmount !== null
+    ? (parseFloat(editedClaimedAmount) || 0)
+    : hospitalAmount;
+  const effectiveTariffAmount = editedTariffAmount !== null
+    ? (parseFloat(editedTariffAmount) || 0)
+    : effectiveTariffTotal;
+
+  // Recalculate approved amount on the fly from edited values
+  const editedApprovedAmount: number | null = (() => {
+    if (effectiveClaimedAmount === null && effectiveTariffAmount === null) return null;
+    const base = effectiveClaimedAmount !== null && effectiveTariffAmount !== null
+      ? Math.min(effectiveClaimedAmount, effectiveTariffAmount)
+      : (effectiveClaimedAmount ?? effectiveTariffAmount);
+    if (base === null) return null;
+    const withBenefit = benefitTotal !== null ? Math.min(base, benefitTotal) : base;
+    return bsiEffectiveBalance !== null ? Math.min(withBenefit, bsiEffectiveBalance) : withBenefit;
+  })();
   const tariffLensAmount = sumLensAmountFromTariff(tariffItems);
   const hospitalLensAmount = sumLensAmountFromHospital(hospitalBillBreakdown);
   const tariffWithoutLens =
@@ -247,6 +275,13 @@ export function FinancialSummaryTab({
       const nonPackageTotal = baseAmount + lensAmount;
       return benefitTotal === null ? nonPackageTotal : Math.min(nonPackageTotal, benefitTotal);
     })();
+
+  // Notify parent when edited amounts change
+  useEffect(() => {
+    if (onAmountsChange && (editedClaimedAmount !== null || editedTariffAmount !== null)) {
+      onAmountsChange(effectiveClaimedAmount, effectiveTariffAmount, editedApprovedAmount);
+    }
+  }, [editedClaimedAmount, editedTariffAmount]);
 
   // ── BSI derived values ──────────────────────────────────────────────────────
   const bsiBaseSI =
@@ -512,28 +547,83 @@ export function FinancialSummaryTab({
           <h3 className="text-lg font-semibold text-gray-900">APPROVALS</h3>
           <div className="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2">
             {/* Three breakdown lines */}
+            {/* Total Medical Bill — editable */}
             <div className="flex items-center justify-between py-1 border-b border-gray-200">
               <span className="text-sm text-gray-600">Total Medical Bill</span>
-              <span className="text-sm text-gray-900">{formatDisplayAmount(hospitalAmount)}</span>
+              {isEditingClaimed ? (
+                <input
+                  autoFocus
+                  type="number"
+                  className="w-32 text-right text-sm border border-blue-400 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
+                  value={editedClaimedAmount ?? (hospitalAmount?.toString() ?? "")}
+                  onChange={(e) => setEditedClaimedAmount(e.target.value)}
+                  onBlur={() => setIsEditingClaimed(false)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setIsEditingClaimed(false); }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setEditedClaimedAmount(editedClaimedAmount ?? (hospitalAmount?.toString() ?? "")); setIsEditingClaimed(true); }}
+                  className="text-sm text-gray-900 underline decoration-dotted cursor-pointer hover:text-blue-600 flex items-center gap-1"
+                  title="Click to edit"
+                >
+                  {formatDisplayAmount(effectiveClaimedAmount)}
+                  <span className="text-[10px] text-gray-400">✎</span>
+                </button>
+              )}
             </div>
+
+            {/* Tariff Amount — editable */}
             <div className="flex items-center justify-between py-1 border-b border-gray-200">
               <span className="text-sm text-gray-600">Tariff Amount</span>
-              <span className="text-sm text-gray-900">{effectiveTariffTotal !== null ? formatDisplayAmount(effectiveTariffTotal) : "—"}</span>
+              {isEditingTariff ? (
+                <input
+                  autoFocus
+                  type="number"
+                  className="w-32 text-right text-sm border border-blue-400 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
+                  value={editedTariffAmount ?? (effectiveTariffTotal?.toString() ?? "")}
+                  onChange={(e) => setEditedTariffAmount(e.target.value)}
+                  onBlur={() => setIsEditingTariff(false)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setIsEditingTariff(false); }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setEditedTariffAmount(editedTariffAmount ?? (effectiveTariffTotal?.toString() ?? "")); setIsEditingTariff(true); }}
+                  className="text-sm text-gray-900 underline decoration-dotted cursor-pointer hover:text-blue-600 flex items-center gap-1"
+                  title="Click to edit"
+                >
+                  {effectiveTariffAmount !== null ? formatDisplayAmount(effectiveTariffAmount) : "—"}
+                  <span className="text-[10px] text-gray-400">✎</span>
+                </button>
+              )}
             </div>
+
+            {/* Benefit Plan Limit — read only */}
             <div className="flex items-center justify-between py-1 border-b border-gray-200">
               <span className="text-sm text-gray-600">Benefit Plan Limit</span>
               <span className="text-sm text-gray-900">{benefitTotal !== null ? formatDisplayAmount(benefitTotal) : "—"}</span>
             </div>
-            {/* Total Amount Approved */}
+
+            {/* Total Amount Approved — recalculated on the fly */}
             <div className="flex items-center justify-between py-1">
               <span className="text-sm font-bold text-gray-900">Total Amount Approved</span>
               <div className="flex flex-col items-end gap-0.5">
-                {bsiCapApplied && (
-                  <span className="text-xs text-gray-400 line-through">{formatDisplayAmount(totalAmountApproved)}</span>
-                )}
-                <span className="text-sm font-bold text-gray-900">{formatDisplayAmount(bsiCappedPayable)}</span>
-                {bsiCapApplied && (
-                  <span className="text-[10px] font-medium text-amber-600">Capped by live SI balance</span>
+                {(editedClaimedAmount !== null || editedTariffAmount !== null) ? (
+                  <span className="text-sm font-bold text-blue-700">
+                    {formatDisplayAmount(editedApprovedAmount)}
+                    <span className="ml-1 text-[10px] font-normal text-blue-400">edited</span>
+                  </span>
+                ) : (
+                  <>
+                    {bsiCapApplied && (
+                      <span className="text-xs text-gray-400 line-through">{formatDisplayAmount(totalAmountApproved)}</span>
+                    )}
+                    <span className="text-sm font-bold text-gray-900">{formatDisplayAmount(bsiCappedPayable)}</span>
+                    {bsiCapApplied && (
+                      <span className="text-[10px] font-medium text-amber-600">Capped by live SI balance</span>
+                    )}
+                  </>
                 )}
               </div>
             </div>
