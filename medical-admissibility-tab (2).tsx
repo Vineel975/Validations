@@ -486,27 +486,27 @@ export function MedicalAdmissibilityTab({
         }
       } catch { /* use empty slots */ }
 
-      // ── Seed icdCodeMap for conditionRows ─────────────────────────────────────
-      const newIcdCodeMap = new Map<string, string>();
-      const code1 = slots[0]?.code || aiCode1 || null;
-      if (code1) Array.from(presentConditions).forEach((k) => newIcdCodeMap.set(k, code1));
-
-      // Fallback for cataract if nothing found
-      if (newIcdCodeMap.size === 0) {
-        const fallback = aiCode1 || fallbackCataractIcd || (await fetchICDCode(diagLower.split(",")[0].trim()));
-        if (fallback) Array.from(presentConditions).forEach((k) => newIcdCodeMap.set(k, fallback || ""));
-      }
-      setIcdCodeMap(newIcdCodeMap);
-
       // ── Build icdDescriptions from slots ─────────────────────────────────────
       const newDescMap = new Map<string, string>();
       slots.forEach((slot) => { if (slot) newDescMap.set(slot.code, slot.description); });
       setIcdDescriptions(newDescMap);
 
-      // ── Seed all 7 level maps ─────────────────────────────────────────────────
+      // ── Seed icdCodeMap for conditionRows (Code-1 per condition key) ──────────
+      const newIcdCodeMap = new Map<string, string>();
+      const code1 = slots[0]?.code || aiCode1 || null;
+      // Seed all condition keys AND the global key
+      const allKeys = new Set([...Array.from(presentConditions), "__icd__"]);
+      if (code1) allKeys.forEach((k) => newIcdCodeMap.set(k, code1));
+      if (newIcdCodeMap.size === 0) {
+        const fallback = aiCode1 || fallbackCataractIcd || (await fetchICDCode(diagLower.split(",")[0].trim()));
+        if (fallback) allKeys.forEach((k) => newIcdCodeMap.set(k, fallback || ""));
+      }
+      setIcdCodeMap(newIcdCodeMap);
+
+      // ── Seed all 7 level maps (keyed by condition key AND "__icd__") ──────────
       const newLevels = slots.map((slot) => {
         const m = new Map<string, string>();
-        if (slot) Array.from(presentConditions).forEach((k) => m.set(k, slot.code));
+        if (slot) allKeys.forEach((k) => m.set(k, slot.code));
         return m;
       });
       setIcdLevels(newLevels);
@@ -611,6 +611,44 @@ export function MedicalAdmissibilityTab({
                   </div>
                 </div>
               )}
+              {/* Standalone ICD Codes — always shown when diagnosis available */}
+              {icdLevels.some((m) => m.get("__icd__")) && (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold text-gray-700">ICD Codes</div>
+                  <div className="rounded-md border bg-white overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          {Array.from({ length: 7 }, (_, i) => (
+                            <th key={i} className="px-2 py-1.5 text-left font-medium text-gray-600 min-w-[170px]">
+                              {`ICD Level ${i + 1}`}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          {Array.from({ length: 7 }, (_, i) => (
+                            <td key={i} className="px-1 py-1 align-top border-r last:border-r-0">
+                              <IcdCombobox
+                                value={icdLevels[i]?.get("__icd__") ?? ""}
+                                onChange={(code, desc) => handleICDLevelChange(i, "__icd__", code, desc)}
+                                placeholder={`Level ${i + 1}`}
+                              />
+                              {icdLevels[i]?.get("__icd__") && (
+                                <div className="mt-0.5 px-1 text-[10px] text-gray-500 leading-tight">
+                                  {icdDescriptions.get(icdLevels[i].get("__icd__")!) || ""}
+                                </div>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {conditionRows.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-sm font-semibold text-gray-700">
