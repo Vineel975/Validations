@@ -8858,104 +8858,44 @@
 
                 // ── ClaimAI: Save Coding Row function ──────────────────────────────────
                 window.claimAI_saveCodingRow = function(tpaProcID, level1, level2, level3, icdCodeID, icdName, diseaseCode) {
-                    var claimID = $('#hdnClaimID').val();
-                    var slNo    = $('#hdnClaimSlNo').val();
+                    var claimID     = $('#hdnClaimID').val();
+                    var slNo        = $('#hdnClaimSlNo').val();
                     var billingType = $('#hdnBillingType').val() || '0';
 
-                    // Step 1: Fetch existing coding row to get exact schema from server
+                    // Call dedicated server-side action that builds DataTable with correct schema
                     $.ajax({
-                        url: '/MedicalScrutiny/ClaimCodingDetails_Retrieve?ClaimID=' + claimID + '&SlNo=' + slNo + '&ClaimReqTypeID=0',
-                        type: 'GET',
+                        url: '@Url.Action("SaveCodingRowForClaimAI", "MedicalScrutiny")',
+                        type: 'POST',
+                        data: {
+                            claimId:        claimID,
+                            slNo:           slNo,
+                            tpaProcedureId: tpaProcID,
+                            icdCodeId:      icdCodeID || 0,
+                            icdName:        icdName   || '',
+                            diseaseCode:    diseaseCode || '',
+                            billingType:    billingType
+                        },
                         success: function(res) {
-                            try {
-                                var existingRows = [];
-                                try { existingRows = $.parseJSON(res) || []; } catch(e) { existingRows = []; }
-
-                                var billAmt = parseFloat($('#txtTotalServicesBillAmount').val()) || 0;
-
-                                console.log('[ClaimAI] Existing row keys:', existingRows.length > 0 ? Object.keys(existingRows[0]) : 'none');
-
-                                if (existingRows.length > 0) {
-                                    // Use first existing row as schema template — update its ICD/Procedure fields
-                                    var row = $.extend({}, existingRows[0]);
-                                    row.TPAProcedureID   = tpaProcID;
-                                    row.ICDCode          = icdCodeID || row.ICDCode || 0;
-                                    row.ICDName          = icdName   || row.ICDName || '';
-                                    row.DiseaseCode      = diseaseCode || row.DiseaseCode || '';
-                                    existingRows[0] = row;
-                                } else {
-                                    // No existing row — build minimal row using existing coding details schema
-                                    // Get schema from hdnClaimsCodingDetails if available
-                                    var schemaRow = null;
-                                    if ($('#hdnClaimsCodingDetails').val()) {
-                                        try {
-                                            var cd = $.parseJSON($('#hdnClaimsCodingDetails').val());
-                                            if (cd && cd.length > 0) schemaRow = $.extend({}, cd[0]);
-                                        } catch(e) {}
-                                    }
-
-                                    if (schemaRow) {
-                                        // Use existing schema, override key fields
-                                        schemaRow.TPAProcedureID = tpaProcID;
-                                        schemaRow.ICDCode        = icdCodeID || 0;
-                                        schemaRow.ICDName        = icdName   || '';
-                                        schemaRow.DiseaseCode    = diseaseCode || '';
-                                        existingRows = [schemaRow];
-                                    } else {
-                                        // Absolute fallback — only send fields we know exist
-                                        existingRows = [{
-                                            TPAProcedureID: tpaProcID,
-                                            ICDCode:        icdCodeID || 0,
-                                            ICDName:        icdName   || '',
-                                            DiseaseCode:    diseaseCode || '',
-                                            SICategery:     69,
-                                            isGipsa:        false,
-                                            isCI:           false,
-                                            isPED:          false,
-                                            isDayCare:      false,
-                                            BillAmount:     billAmt,
-                                            EligibleBillAmount: billAmt,
-                                            PayableAmount:  billAmt,
-                                            DisallowedAmount: 0,
-                                            Discount:       0,
-                                            BufferAmount:   0,
-                                            AdditionalAmount: 0,
-                                        }];
-                                    }
+                            console.log('[ClaimAI] Coding saved:', res);
+                            if (res && res.success) {
+                                if (typeof Retrieve_ClaimsCodingDetails === 'function') {
+                                    Retrieve_ClaimsCodingDetails(claimID, slNo, 0);
                                 }
-
-                                var codingJSON = JSON.stringify(existingRows);
-
-                                // Step 2: Save
-                                $.ajax({
-                                    url: '@Url.Action("Save_CodingDetails", "MedicalScrutiny")',
-                                    type: 'POST',
-                                    data: { ClaimsCoding: codingJSON, ClaimId: claimID, SlNo: slNo, BillingType: billingType },
-                                    success: function(saveRes) {
-                                        console.log('[ClaimAI] Coding saved:', saveRes);
-                                        if (typeof Retrieve_ClaimsCodingDetails === 'function') {
-                                            Retrieve_ClaimsCodingDetails(claimID, slNo, 0);
-                                        }
-                                        var $toast = $('<div/>')
-                                            .text('✓ Coding details saved')
-                                            .css({ position:'fixed', bottom:'50px', right:'20px',
-                                                   background:'#2d6a9f', color:'#fff',
-                                                   padding:'8px 14px', borderRadius:'4px',
-                                                   fontSize:'13px', zIndex:99999,
-                                                   boxShadow:'0 2px 6px rgba(0,0,0,0.2)' })
-                                            .appendTo('body');
-                                        setTimeout(function() { $toast.fadeOut(400, function(){ $toast.remove(); }); }, 3000);
-                                    },
-                                    error: function(xhr) {
-                                        console.warn('[ClaimAI] Coding save failed:', xhr.responseText);
-                                    }
-                                });
-                            } catch(e) {
-                                console.error('[ClaimAI] claimAI_saveCodingRow error:', e);
+                                var $toast = $('<div/>')
+                                    .text('✓ Coding details saved')
+                                    .css({ position:'fixed', bottom:'50px', right:'20px',
+                                           background:'#2d6a9f', color:'#fff',
+                                           padding:'8px 14px', borderRadius:'4px',
+                                           fontSize:'13px', zIndex:99999,
+                                           boxShadow:'0 2px 6px rgba(0,0,0,0.2)' })
+                                    .appendTo('body');
+                                setTimeout(function() { $toast.fadeOut(400, function(){ $toast.remove(); }); }, 3000);
+                            } else {
+                                console.warn('[ClaimAI] Coding save returned failure:', res);
                             }
                         },
-                        error: function() {
-                            console.warn('[ClaimAI] Could not retrieve existing coding rows — skipping coding save.');
+                        error: function(xhr) {
+                            console.warn('[ClaimAI] Coding save failed:', xhr.responseText);
                         }
                     });
                 };
