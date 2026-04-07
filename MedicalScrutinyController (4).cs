@@ -7893,12 +7893,6 @@ namespace Enrollment.Controllers
                     dt.Rows.Add(row);
                 }
 
-                // Log all columns for debugging
-                var allColNames = new System.Collections.Generic.List<string>();
-                foreach (System.Data.DataColumn col in dt.Columns) allColNames.Add(col.ColumnName);
-                vMessage = "COLUMNS: " + string.Join(", ", allColNames);
-                return Json(new { success = false, message = vMessage, debug = true });
-
                 // Always remove known display-only columns
                 foreach (var bad in new[] { "ICDName", "DiseaseCode", "ICDLevel1", "ICDLevel2",
                     "ICDLevel3", "ICDLevel4", "ICDLevel5", "ICDLevel6", "ICDLevel7",
@@ -7907,39 +7901,16 @@ namespace Enrollment.Controllers
                     "Level1Name", "Level2Name", "Level3Name", "isAutoClaimAI" })
                     if (dt.Columns.Contains(bad)) dt.Columns.Remove(bad);
 
-                // Try saving — if a column error occurs, remove that column and retry (up to 20 times)
-                int result = 0;
-                int maxRetries = 20;
-                for (int attempt = 0; attempt < maxRetries; attempt++)
-                {
-                    try
-                    {
-                        result = _objMadicalScrutinyVM.Save_CodingDetails(
-                            claimIdLong, slNoInt, billType, dt,
-                            Convert.ToInt32(Session[SessionValue.UserRegionID]),
-                            out vMessage);
-                        break; // success
-                    }
-                    catch (Exception ex)
-                    {
-                        var msg = ex.Message;
-                        // Extract column name from "Column 'XYZ' does not belong to table"
-                        var match = System.Text.RegularExpressions.Regex.Match(
-                            msg, @"Column '([^']+)' does not belong");
-                        if (match.Success && dt.Columns.Contains(match.Groups[1].Value))
-                        {
-                            dt.Columns.Remove(match.Groups[1].Value);
-                            // continue retry loop
-                        }
-                        else
-                        {
-                            vMessage = msg;
-                            break; // different error — stop
-                        }
-                    }
-                }
+                // Serialize our DataTable to JSON and call the exact same
+                // standalone Save_CodingDetails action used when user saves manually
+                string codingJson = Newtonsoft.Json.JsonConvert.SerializeObject(dt);
+                string saveResult = Save_CodingDetails(codingJson, claimId, slNo, (billType > 0 ? billType.ToString() : "0"));
+                bool isSuccess = saveResult != null &&
+                    !saveResult.StartsWith("ErrorCode") &&
+                    !saveResult.Contains("does not belong") &&
+                    !saveResult.ToLower().Contains("error");
 
-                return Json(new { success = result > 0 || (vMessage != null && vMessage.ToLower().Contains("success")), message = vMessage });
+                return Json(new { success = isSuccess, message = saveResult });
             }
             catch (Exception ex)
             {
