@@ -39,6 +39,8 @@ interface FinancialSummaryTabProps {
   onTariffAmountClick?: (pageNumber?: number | null, highlightText?: string, highlightName?: string) => void;
   /** Passed from result-view — same claimId used by benefit-plan and patient-info tabs */
   claimId?: string;
+  /** MemberPolicyID for previous claims lookup */
+  memberPolicyId?: string;
   /** Called when user edits claimed/tariff amounts so parent can use updated approved amount */
   onAmountsChange?: (claimedAmount: number | null, tariffAmount: number | null, approvedAmount: number | null) => void;
 }
@@ -63,6 +65,7 @@ export function FinancialSummaryTab({
   tariffPageNumber,
   onTariffAmountClick,
   claimId,
+  memberPolicyId,
   onAmountsChange,
 }: FinancialSummaryTabProps) {
 
@@ -272,6 +275,29 @@ export function FinancialSummaryTab({
   // Manual overrides (kept for backward compat with onAmountsChange)
   const [editedClaimedAmount] = useState<string | null>(null);
   const [editedTariffAmount]  = useState<string | null>(null);
+
+  // ── Previous Claims ────────────────────────────────────────────────────────
+  type PreviousClaim = {
+    claimId: string; slNo: number; admissionDate: string | null;
+    dischargeDate: string | null; diagnosis: string | null;
+    treatment: string | null; complaint: string | null;
+    billAmount: number | null; approvedAmount: number | null;
+    hospital: string | null; status: string | null;
+  };
+  const [prevClaims, setPrevClaims]       = useState<PreviousClaim[]>([]);
+  const [prevClaimsLoading, setPrevLoading] = useState(false);
+  const [prevClaimsError, setPrevError]   = useState<string | null>(null);
+  const [prevClaimsExpanded, setPrevExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!memberPolicyId || !claimId) return;
+    setPrevLoading(true);
+    fetch(`/api/previous-claims?memberPolicyId=${encodeURIComponent(memberPolicyId)}&claimId=${encodeURIComponent(claimId)}`)
+      .then((r) => r.json())
+      .then((data) => { setPrevClaims(data.claims ?? []); setPrevError(null); })
+      .catch((e) => setPrevError(String(e)))
+      .finally(() => setPrevLoading(false));
+  }, [memberPolicyId, claimId]);
 
   const hospitalAmount = normalizeAmount(financialSummaryTotals.hospitalBillAfterDiscount);
   const benefitTotal = normalizeAmount(benefitAmount);
@@ -642,6 +668,110 @@ export function FinancialSummaryTab({
           </Card>
 
         </div>
+
+        {/* Previous Claims */}
+        {(memberPolicyId && claimId) && (
+          <Card className="border-2 border-indigo-200 bg-indigo-50">
+            <CardContent className="pt-4">
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setPrevExpanded((v) => !v)}
+              >
+                <div className="text-sm font-semibold uppercase tracking-wide text-indigo-700">
+                  Previous Claims
+                  {prevClaims.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-indigo-500">
+                      ({prevClaims.length})
+                    </span>
+                  )}
+                </div>
+                <span className="text-indigo-400 text-xs">
+                  {prevClaimsExpanded ? "▲ collapse" : "▼ expand"}
+                </span>
+              </div>
+
+              {prevClaimsExpanded && (
+                <div className="mt-3">
+                  {prevClaimsLoading && (
+                    <div className="text-xs text-indigo-500 animate-pulse">Loading previous claims...</div>
+                  )}
+                  {prevClaimsError && (
+                    <div className="text-xs text-red-500">Error: {prevClaimsError}</div>
+                  )}
+                  {!prevClaimsLoading && !prevClaimsError && prevClaims.length === 0 && (
+                    <div className="text-xs text-indigo-400">No previous claims found for this policy.</div>
+                  )}
+                  {!prevClaimsLoading && prevClaims.length > 0 && (
+                    <div className="space-y-3 mt-2">
+                      {prevClaims.map((claim) => (
+                        <div
+                          key={`${claim.claimId}-${claim.slNo}`}
+                          className="rounded-md border border-indigo-200 bg-white p-3 text-xs space-y-1.5"
+                        >
+                          {/* Header row */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5">
+                              <div className="font-semibold text-indigo-800 text-sm">
+                                {claim.diagnosis ?? "—"}
+                              </div>
+                              {claim.hospital && (
+                                <div className="text-indigo-500">{claim.hospital}</div>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0">
+                              {claim.status && (
+                                <span className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-700">
+                                  {claim.status}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Dates */}
+                          {(claim.admissionDate || claim.dischargeDate) && (
+                            <div className="text-gray-500">
+                              {claim.admissionDate && <span>Admitted: {claim.admissionDate}</span>}
+                              {claim.admissionDate && claim.dischargeDate && <span className="mx-1">→</span>}
+                              {claim.dischargeDate && <span>Discharged: {claim.dischargeDate}</span>}
+                            </div>
+                          )}
+
+                          {/* Treatment */}
+                          {claim.treatment && (
+                            <div className="text-gray-600">
+                              <span className="font-medium text-gray-700">Treatment: </span>
+                              {claim.treatment}
+                            </div>
+                          )}
+
+                          {/* Amounts */}
+                          <div className="flex items-center gap-4 pt-1 border-t border-indigo-100">
+                            {claim.billAmount != null && (
+                              <div>
+                                <span className="text-gray-500">Claimed: </span>
+                                <span className="font-semibold text-gray-800">
+                                  INR {claim.billAmount.toLocaleString("en-IN")}
+                                </span>
+                              </div>
+                            )}
+                            {claim.approvedAmount != null && (
+                              <div>
+                                <span className="text-gray-500">Approved: </span>
+                                <span className="font-semibold text-emerald-700">
+                                  INR {claim.approvedAmount.toLocaleString("en-IN")}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Approvals */}
         <section className="space-y-6">
