@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -16,13 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import type {
   ConditionTestCheck,
   ConditionTestStatus,
@@ -122,50 +116,160 @@ function matchesConditionName(
  * Fetches ICD-10-CM code for a medical condition using NLM API
  * Extracts the base condition name (removes parenthetical test info) for better search results
  */
-async function fetchICDCode(condition: string): Promise<string | undefined> {
-  try {
-    const term = condition.split("(")[0].trim().toLowerCase();
-    const res = await fetch(`/api/icd?condition=${encodeURIComponent(term)}`);
-    if (!res.ok) return undefined;
-    const data = await res.json() as { codes?: { code: string; description: string }[] };
-    const codes = data.codes ?? [];
-    if (!codes.length) return undefined;
-    if (term.includes("cataract")) {
-      const h25 = codes.find((c) => c.code.startsWith("H25"));
-      if (h25) return h25.code;
-    }
-    return codes[0].code;
-  } catch {
-    return undefined;
-  }
-}
+interface IcdOption { code: string; description: string; level?: number; }
 
-/** Fetches multiple ICD code options for a condition — used to populate dropdowns */
-async function fetchICDOptions(condition: string): Promise<{ code: string; description: string }[]> {
+async function searchIcdCodes(query: string): Promise<IcdOption[]> {
+  if (!query.trim()) return [];
   try {
-    const term = condition.split("(")[0].trim().toLowerCase();
-    const res = await fetch(`/api/icd?condition=${encodeURIComponent(term)}`);
+    const res = await fetch(`/api/icd?q=${encodeURIComponent(query.trim())}`);
     if (!res.ok) return [];
-    const data = await res.json() as { codes?: { code: string; description: string }[] };
+    const data = await res.json() as { codes?: IcdOption[] };
     return data.codes ?? [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-/** Fetches the description for a specific ICD-10 code from NLM via proxy */
+async function fetchICDCode(condition: string): Promise<string | undefined> {
+  const codes = await searchIcdCodes(condition.split("(")[0].trim());
+  if (!codes.length) return undefined;
+  if (condition.toLowerCase().includes("cataract")) {
+    const h25 = codes.find((c) => c.code.startsWith("H25"));
+    if (h25) return h25.code;
+  }
+  return codes[0].code;
+}
+
 async function fetchICDDescription(code: string): Promise<string> {
   if (!code) return "";
   try {
     const res = await fetch(`/api/icd?code=${encodeURIComponent(code)}`);
     if (!res.ok) return "";
-    const data = await res.json() as { codes?: { code: string; description: string }[] };
+    const data = await res.json() as { codes?: IcdOption[] };
     const codes = data.codes ?? [];
     const exact = codes.find((c) => c.code.toLowerCase() === code.toLowerCase());
     return exact?.description ?? codes[0]?.description ?? "";
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
+}
+
+async function fetchICDOptions(condition: string): Promise<IcdOption[]> {
+  return searchIcdCodes(condition.split("(")[0].trim());
+}
+
+// ── Searchable ICD Combobox ─────────────────────────────────────────────────
+function IcdCombobox({
+  value,
+  onChange,
+  placeholder = "Search ICD…",
+}: {
+  value: string;
+  onChange: (code: string, description: string) => void;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<IcdOption[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Selected label
+  const [selectedLabel, setSelectedLabel] = useState(value);
+  useEffect(() => {
+    if (value) {
+      fetchICDDescription(value).then((desc) => {
+        setSelectedLabel(desc ? `${value} — ${desc}` : value);
+      });
+    } else {
+      setSelectedLabel("");
+    }
+  }, [value]);
+
+  // Click outside to close
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSearch = (q: string) => {
+    setQuery(q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!q.trim()) { setResults([]); return; }
+    setLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      const res = await searchIcdCodes(q);
+      setResults(res);
+      setLoading(false);
+    }, 250);
+  };
+
+  const handleSelect = (opt: IcdOption) => {
+    onChange(opt.code, opt.description);
+    setSelectedLabel(`${opt.code} — ${opt.description}`);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative w-full min-w-[160px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between rounded-md border border-input bg-background px-2 py-1 text-left text-xs hover:bg-muted h-8 gap-1"
+      >
+        <span className="truncate text-xs font-mono text-blue-700 font-medium flex-1">
+          {value || <span className="text-muted-foreground font-normal">{placeholder}</span>}
+        </span>
+        <svg className="h-3 w-3 shrink-0 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-80 rounded-md border border-border bg-background shadow-lg">
+          <div className="p-2 border-b border-border">
+            <input
+              autoFocus
+              type="text"
+              value={query}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder="Type code or disease name…"
+              className="w-full rounded border border-input px-2 py-1 text-xs outline-none focus:border-ring"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {loading && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">Searching…</div>
+            )}
+            {!loading && results.length === 0 && query && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">No results for "{query}"</div>
+            )}
+            {!loading && results.length === 0 && !query && value && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">
+                Current: <span className="font-mono text-blue-700">{value}</span>
+              </div>
+            )}
+            {results.map((opt) => (
+              <button
+                key={opt.code}
+                type="button"
+                onClick={() => handleSelect(opt)}
+                className="flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-muted"
+              >
+                <span className="font-mono text-xs text-blue-700 shrink-0 pt-0.5">{opt.code}</span>
+                <span className="text-xs text-gray-700 leading-tight">{opt.description}</span>
+                {opt.level && (
+                  <span className="ml-auto text-[10px] text-gray-400 shrink-0">L{opt.level}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const conditionRules: ConditionRule[] = [
@@ -325,13 +429,12 @@ export function MedicalAdmissibilityTab({
   onScrollToPage,
 }: MedicalAdmissibilityTabProps) {
   const [icdCodeMap, setIcdCodeMap] = useState<Map<string, string>>(new Map());
-  const [selectedICDCodes, setSelectedICDCodes] = useState<Map<string, string>>(new Map());
-  const [selectedICDCodes2, setSelectedICDCodes2] = useState<Map<string, string>>(new Map());
-  const [selectedICDCodes3, setSelectedICDCodes3] = useState<Map<string, string>>(new Map());
-  // conditionKey -> array of {code, description} options fetched from NLM
-  const [icdOptionsMap, setIcdOptionsMap] = useState<Map<string, { code: string; description: string }[]>>(new Map());
-  // Store descriptions for AI-extracted codes (code -> description)
+  // 7 levels of ICD codes per condition key
+  const [icdLevels, setIcdLevels] = useState<Map<string, string>[]>(
+    Array.from({ length: 7 }, () => new Map<string, string>())
+  );
   const [icdDescriptions, setIcdDescriptions] = useState<Map<string, string>>(new Map());
+  const [icdOptionsMap, setIcdOptionsMap] = useState<Map<string, IcdOption[]>>(new Map());
 
   // Fetch ICD codes for conditions that appear in the data
   useEffect(() => {
@@ -343,10 +446,13 @@ export function MedicalAdmissibilityTab({
         (medicalAdmissibility as { conditionTests?: ConditionTestCheck[] }).conditionTests || [];
       const fallbackCataractIcd = inferDefaultCataractIcdCode(medicalAdmissibility);
 
-      // AI-extracted ICD codes — primary source (only available after Convex deploy + reprocess)
-      const aiCode1 = (medicalAdmissibility as { icdCode1?: string })?.icdCode1?.trim() || null;
-      const aiCode2 = (medicalAdmissibility as { icdCode2?: string })?.icdCode2?.trim() || null;
-      const aiCode3 = (medicalAdmissibility as { icdCode3?: string })?.icdCode3?.trim() || null;
+      // AI-extracted ICD codes — levels 1-3 from AI extraction
+      const aiCodes: (string | null)[] = [
+        (medicalAdmissibility as { icdCode1?: string })?.icdCode1?.trim() || null,
+        (medicalAdmissibility as { icdCode2?: string })?.icdCode2?.trim() || null,
+        (medicalAdmissibility as { icdCode3?: string })?.icdCode3?.trim() || null,
+        null, null, null, null, // levels 4-7 start empty
+      ];
 
       // ── Step 1: Find present conditions ──────────────────────────────────────
       const presentConditions = new Set<string>();
@@ -361,85 +467,54 @@ export function MedicalAdmissibilityTab({
           if (key) presentConditions.add(key);
         }
       }
-      // Ensure at least one key exists so codes render
       if (presentConditions.size === 0) {
-        presentConditions.add("cataract"); // safe default — will use cataract options list
+        presentConditions.add(diagnosisText.split(",")[0].trim() || "cataract");
       }
 
-      // ── Step 2: Build options map first (needed for descriptions) ─────────────
-      const newOptionsMap = new Map<string, { code: string; description: string }[]>();
-      await Promise.all(
-        Array.from(presentConditions).map(async (conditionKey) => {
-          let options: { code: string; description: string }[] =
-            conditionKey === "cataract"
-              ? [...cataractICDCodes]
-              : await fetchICDOptions(
-                  conditionRules.find((r) => r.key === conditionKey)?.label || conditionKey
-                );
-          newOptionsMap.set(conditionKey, options.length ? options : [...cataractICDCodes]);
-        })
+      // ── Step 2: Fetch descriptions for AI codes ───────────────────────────────
+      const descResults = await Promise.all(
+        aiCodes.map((code) => code ? fetchICDDescription(code) : Promise.resolve(""))
       );
-      setIcdOptionsMap(newOptionsMap);
-
-      // ── Step 3: Fetch descriptions for AI codes ───────────────────────────────
-      const [desc1, desc2, desc3] = await Promise.all([
-        aiCode1 ? fetchICDDescription(aiCode1) : Promise.resolve(""),
-        aiCode2 ? fetchICDDescription(aiCode2) : Promise.resolve(""),
-        aiCode3 ? fetchICDDescription(aiCode3) : Promise.resolve(""),
-      ]);
       const newDescMap = new Map<string, string>();
-      if (aiCode1) newDescMap.set(aiCode1, desc1);
-      if (aiCode2) newDescMap.set(aiCode2, desc2);
-      if (aiCode3) newDescMap.set(aiCode3, desc3);
+      aiCodes.forEach((code, i) => { if (code) newDescMap.set(code, descResults[i]); });
       setIcdDescriptions(newDescMap);
 
-      // ── Step 4: Build icdCodeMap — Code-1 per condition ──────────────────────
+      // ── Step 3: Build icdCodeMap — Code-1 per condition ──────────────────────
       const newIcdCodeMap = new Map<string, string>();
       await Promise.all(
         Array.from(presentConditions).map(async (conditionKey) => {
           const rule = conditionRules.find((r) => r.key === conditionKey);
-          // Priority: AI code1 → NLM fetch → cataract fallback → hardcoded rule default
           const code =
-            aiCode1 ||
+            aiCodes[0] ||
             (await fetchICDCode(rule?.label || conditionKey)) ||
             (rule?.key === "cataract" ? fallbackCataractIcd : undefined) ||
-            rule?.icdCode ||
-            (newOptionsMap.get(conditionKey)?.[0]?.code) ||
-            null;
+            rule?.icdCode || null;
           if (code) newIcdCodeMap.set(conditionKey, code);
         })
       );
       setIcdCodeMap(newIcdCodeMap);
 
-      // ── Step 5: Seed selected codes for all 3 dropdowns ──────────────────────
-      const newSelected1 = new Map(newIcdCodeMap);
-      const newSelected2 = new Map<string, string>();
-      const newSelected3 = new Map<string, string>();
-
-      Array.from(presentConditions).forEach((k) => {
-        const opts = newOptionsMap.get(k) ?? cataractICDCodes;
-
-        // Code-1: AI or from icdCodeMap
-        if (aiCode1) newSelected1.set(k, aiCode1);
-
-        // Code-2: AI or second item from options list
-        if (aiCode2) {
-          newSelected2.set(k, aiCode2);
-        } else if (opts.length > 1) {
-          newSelected2.set(k, opts[1].code);
-        }
-
-        // Code-3: AI or third item from options list
-        if (aiCode3) {
-          newSelected3.set(k, aiCode3);
-        } else if (opts.length > 2) {
-          newSelected3.set(k, opts[2].code);
-        }
+      // ── Step 4: Seed 7 level maps from AI codes ───────────────────────────────
+      const newLevels = Array.from({ length: 7 }, (_, i) => {
+        const m = new Map<string, string>();
+        const aiCode = i === 0 ? (aiCodes[0] || newIcdCodeMap.get(Array.from(presentConditions)[0] || "") || "") : (aiCodes[i] || "");
+        if (aiCode) Array.from(presentConditions).forEach((k) => m.set(k, aiCode));
+        return m;
       });
+      setIcdLevels(newLevels);
 
-      setSelectedICDCodes(newSelected1);
-      setSelectedICDCodes2(newSelected2);
-      setSelectedICDCodes3(newSelected3);
+      // ── Step 5: Build options map ─────────────────────────────────────────────
+      const newOptionsMap = new Map<string, IcdOption[]>();
+      await Promise.all(
+        Array.from(presentConditions).map(async (conditionKey) => {
+          const rule = conditionRules.find((r) => r.key === conditionKey);
+          const opts = conditionKey === "cataract"
+            ? [...cataractICDCodes]
+            : await fetchICDOptions(rule?.label || conditionKey);
+          newOptionsMap.set(conditionKey, opts.length ? opts : [...cataractICDCodes]);
+        })
+      );
+      setIcdOptionsMap(newOptionsMap);
     };
 
     fetchICDCodes();
@@ -461,54 +536,19 @@ export function MedicalAdmissibilityTab({
     : [];
 
   // Handle ICD code selection for cataract
-  const handleICDCodeChange = (conditionKey: string, code: string) => {
-    setSelectedICDCodes((prev) => { const m = new Map(prev); m.set(conditionKey, code); return m; });
-  };
-  const handleICDCode2Change = (conditionKey: string, code: string) => {
-    setSelectedICDCodes2((prev) => { const m = new Map(prev); m.set(conditionKey, code); return m; });
-  };
-  const handleICDCode3Change = (conditionKey: string, code: string) => {
-    setSelectedICDCodes3((prev) => { const m = new Map(prev); m.set(conditionKey, code); return m; });
+  const handleICDLevelChange = (level: number, conditionKey: string, code: string, desc: string) => {
+    setIcdLevels((prev) => {
+      const next = prev.map((m) => new Map(m));
+      next[level].set(conditionKey, code);
+      return next;
+    });
+    if (code && desc) {
+      setIcdDescriptions((prev) => { const m = new Map(prev); m.set(code, desc); return m; });
+    }
   };
 
-  // Get display ICD code (prefer selected, fall back to fetched)
-  const getDisplayICDCode = (conditionKey: string, fetchedCode?: string) =>
-    selectedICDCodes.get(conditionKey) || fetchedCode;
-  const getDisplayICDCode2 = (conditionKey: string) =>
-    selectedICDCodes2.get(conditionKey) || "";
-  const getDisplayICDCode3 = (conditionKey: string) =>
-    selectedICDCodes3.get(conditionKey) || "";
-
-  /** Shared dropdown renderer — same style for all three ICD columns */
-  const renderICDDropdown = (
-    conditionKey: string,
-    value: string,
-    onChange: (code: string) => void,
-    fallbackOptions?: { code: string; description: string }[],
-  ) => {
-    const options = icdOptionsMap.get(conditionKey) ?? fallbackOptions ?? [];
-    return (
-      <Select value={value || undefined} onValueChange={onChange}>
-        <SelectTrigger className="h-8 w-full min-w-[120px]">
-          <SelectValue placeholder="Select" />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((icd) => (
-            <SelectItem key={icd.code} value={icd.code}>
-              <span className="font-mono text-sm font-medium text-blue-700">
-                {icd.code}
-              </span>
-            </SelectItem>
-          ))}
-          {options.length === 0 && (
-            <SelectItem value="_loading" disabled>
-              Loading...
-            </SelectItem>
-          )}
-        </SelectContent>
-      </Select>
-    );
-  };
+  const getICDLevel = (level: number, conditionKey: string, fallback?: string) =>
+    icdLevels[level]?.get(conditionKey) || fallback || "";
 
   return (
     <Card>
@@ -574,10 +614,10 @@ export function MedicalAdmissibilityTab({
                         <TableRow>
                           <TableHead>Condition</TableHead>
                           <TableHead>Test</TableHead>
-                          <TableHead>ICD Code-1</TableHead>
-                          <TableHead>ICD Code-2</TableHead>
-                          <TableHead>ICD Code-3</TableHead>
-                          <TableHead>ICD Description</TableHead>
+                          {Array.from({ length: 7 }, (_, i) => (
+                            <TableHead key={i} className="min-w-[160px]">{`ICD Code-${i + 1}`}</TableHead>
+                          ))}
+                          <TableHead>Description (Code-1)</TableHead>
                           <TableHead>Reported</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -611,44 +651,22 @@ export function MedicalAdmissibilityTab({
                             >
                               {row.test}
                             </TableCell>
-                            {/* ICD Code-1 */}
+                            {/* ICD Codes 1-7 — searchable combobox */}
+                            {Array.from({ length: 7 }, (_, i) => (
+                              <TableCell key={i} className="align-top p-1">
+                                <IcdCombobox
+                                  value={getICDLevel(i, row.conditionKey!, i === 0 ? row.icdCode : undefined)}
+                                  onChange={(code, desc) => handleICDLevelChange(i, row.conditionKey!, code, desc)}
+                                  placeholder={`Code ${i + 1}`}
+                                />
+                              </TableCell>
+                            ))}
+                            {/* Description for Code-1 */}
                             <TableCell className="align-top">
-                              {renderICDDropdown(
-                                row.conditionKey!,
-                                getDisplayICDCode(row.conditionKey!, row.icdCode) ?? "",
-                                (code) => handleICDCodeChange(row.conditionKey!, code),
-                                row.conditionKey === "cataract" ? cataractICDCodes : undefined,
-                              )}
-                            </TableCell>
-                            {/* ICD Code-2 */}
-                            <TableCell className="align-top">
-                              {renderICDDropdown(
-                                row.conditionKey!,
-                                getDisplayICDCode2(row.conditionKey!),
-                                (code) => handleICDCode2Change(row.conditionKey!, code),
-                                row.conditionKey === "cataract" ? cataractICDCodes : undefined,
-                              )}
-                            </TableCell>
-                            {/* ICD Code-3 */}
-                            <TableCell className="align-top">
-                              {renderICDDropdown(
-                                row.conditionKey!,
-                                getDisplayICDCode3(row.conditionKey!),
-                                (code) => handleICDCode3Change(row.conditionKey!, code),
-                                row.conditionKey === "cataract" ? cataractICDCodes : undefined,
-                              )}
-                            </TableCell>
-                            {/* ICD Description — from fetched description for Code-1 */}
-                            <TableCell className="align-top">
-                              <span className="text-sm text-gray-700">
+                              <span className="text-xs text-gray-600 leading-tight">
                                 {(() => {
-                                  const code1 = getDisplayICDCode(row.conditionKey!, row.icdCode) ?? "";
-                                  // Try icdDescriptions map first (fetched for AI codes)
-                                  if (code1 && icdDescriptions.get(code1)) return icdDescriptions.get(code1);
-                                  // Fall back to options map lookup
-                                  return (icdOptionsMap.get(row.conditionKey!) ?? cataractICDCodes).find(
-                                    (icd) => icd.code === code1
-                                  )?.description || "-";
+                                  const code1 = getICDLevel(0, row.conditionKey!, row.icdCode);
+                                  return code1 ? (icdDescriptions.get(code1) || "-") : "-";
                                 })()}
                               </span>
                             </TableCell>
