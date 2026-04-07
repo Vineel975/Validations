@@ -1,3 +1,13 @@
+debug
+: 
+true
+message
+: 
+"COLUMNS: TPAProcedureID, ICDCode, SICategery, isGipsa, isCI, isPED, isDayCare, BillAmount, EligibleBillAmount, PayableAmount, DisallowedAmount, Discount, BufferAmount, AdditionalAmount"
+success
+: 
+false
+
 Index:16711 [ClaimAI] Coding save returned failure: 
 {success: false, message: "Column 'PackageType' does not belong to table ."}
 message
