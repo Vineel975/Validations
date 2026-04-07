@@ -1,3 +1,8 @@
+Index:16626 [ClaimAI] Coding save failed: Error While Inserting Data into Staging TableTrying to pass a table-valued parameter with 34 column(s) where the corresponding user-defined table type requires 35 column(s).
+﻿
+
+
+
 [ClaimAI] Coding saved: {success: false, message: "Invalid object name 'SumInsuredCategory'."}
 
 SELECT TABLE_SCHEMA, TABLE_NAME 
