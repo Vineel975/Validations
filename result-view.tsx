@@ -629,8 +629,13 @@ export function ResultView({
         ? "medical"
         : null;
 
-    const procedureHint = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
+    const procedureHint  = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
     const eligibleAmount = claimCalculation?.insurerPayable ?? 0;
+    // Hospital bill — total amount extracted from hospital bill document
+    // Try hospitalBillAfterDiscount first, then totalAmount from PDF extraction
+    const packageAmount  = claimCalculation?.hospitalBillAfterDiscount
+                        || claimCalculation?.hospitalBillBeforeDiscount
+                        || (displayAnalysis?.totalAmount?.value ?? 0);
 
     // Send clinical details immediately — don't wait for ICD fetch
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
@@ -642,9 +647,10 @@ export function ResultView({
           lineOfTreatment:      lineOfTreatment       ?? "",
           presentingComplaint:  presentingComplaint.trim(),
           hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
-          icdSlots:             [],          // sent separately below after fetch
+          icdSlots:             [],
           procedureHint:        procedureHint,
           eligibleAmount:       eligibleAmount,
+          packageAmount:        packageAmount,
         },
         "*",
       );
@@ -660,7 +666,6 @@ export function ResultView({
         if (icdRes.ok) {
           const icdData = await icdRes.json() as { slots?: Array<{ code: string; description: string; level: number } | null> };
           const icdSlots = icdData.slots ?? [];
-          // Send ICD slots as a separate message after fetch completes
           window.parent.postMessage(
             {
               source:        "claimai",
@@ -668,6 +673,7 @@ export function ResultView({
               icdSlots,
               procedureHint,
               eligibleAmount,
+              packageAmount,
             },
             "*",
           );
