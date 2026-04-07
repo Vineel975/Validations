@@ -7664,6 +7664,7 @@ namespace Enrollment.Controllers
         /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
         /// GET /MedicalScrutiny/GetMedicalBillDocument
         /// </summary>
+        [HttpGet]
         /// <summary>
         /// Returns patient/claim field values needed by ClaimAI for validation.
         /// Called synchronously from JS before submitting to Convex, so it must be fast.
@@ -7946,13 +7947,18 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
                 dt.Columns.Add("PackageType",         typeof(int));   // VM needs this; strips before SP call
 
+                // PackageRate = (EligibleAmount / PackageAmount) * 100
+                decimal pkgRate = (packageAmt > 0 && eligibleAmt > 0)
+                    ? Math.Round((eligibleAmt / packageAmt) * 100m, 2)
+                    : 0m;
+
                 var row = dt.NewRow();
                 row["TPAProcedureID"]      = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
                 row["TPALevel1"]           = tpaLevel1Id > 0  ? (object)tpaLevel1Id  : DBNull.Value;
                 row["TPALevel2"]           = tpaLevel2Id > 0  ? (object)tpaLevel2Id  : DBNull.Value;
                 row["TPALevel3"]           = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
-                row["PackageRate"]         = 0m;
-                row["PackageRatio"]        = DBNull.Value;
+                row["PackageRate"]         = pkgRate;                               // Req #3
+                row["PackageRatio"]        = pkgRate;                               // same ratio
                 row["TreatementTypeID_19"] = treatTypeId > 0  ? (object)treatTypeId  : DBNull.Value;
                 row["isGipsa"]             = true;
                 row["isDayCare"]           = false;
@@ -7961,19 +7967,19 @@ namespace Enrollment.Controllers
                 row["TypeOfAnesthesiaID"]  = DBNull.Value;
                 row["Exclusions"]          = DBNull.Value;
                 row["SurgeryDate"]         = DBNull.Value;
-                row["BillAmount"]          = packageAmt;
-                row["DisallowedAmount"]    = 0m;
+                row["BillAmount"]          = packageAmt > 0 ? (object)packageAmt : DBNull.Value; // Req #2
+                row["DisallowedAmount"]    = 0m;                                    // Req #4
                 row["DisallowedReasonIDs"] = DBNull.Value;
-                row["PayableAmount"]       = eligibleAmt;
+                row["PayableAmount"]       = eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value;
                 row["BufferAmount"]        = DBNull.Value;
                 row["AdditionalreasonIDs"] = DBNull.Value;
                 row["Discount"]            = 0m;
                 row["Copay"]              = DBNull.Value;
                 row["Remarks"]            = DBNull.Value;
-                row["ICDCode"]            = icdNumericId > 0  ? (object)icdNumericId  : DBNull.Value;
+                row["ICDCode"]            = icdNumericId > 0  ? (object)icdNumericId : DBNull.Value;
                 row["PCSCode"]            = !string.IsNullOrEmpty(pcsCodeStr) ? (object)pcsCodeStr : DBNull.Value;
                 row["PCSDescription"]     = !string.IsNullOrEmpty(pcsDesc)    ? (object)pcsDesc    : DBNull.Value;
-                row["EligibleAmount"]     = eligibleAmt;
+                row["EligibleAmount"]     = eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value;
                 row["AdditionalAmount"]   = DBNull.Value;
                 row["BPCoverageLimit"]    = DBNull.Value;
                 row["ProcessHTML"]        = DBNull.Value;
