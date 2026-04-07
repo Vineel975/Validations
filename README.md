@@ -1,3 +1,6 @@
+[ClaimAI] hdnClaimsCodingDetails keys: TPAProcedureID, TPALevel1, TPALevel2, TPALevel3, PackageRate, PackageRatio, TreatementTypeID_19, isGipsa, isDayCare, isCI, isPED, TypeOfAnesthesiaID, Exclusions, SurgeryDate, BillAmount, DisallowedAmount, DisallowedReasonIDs, PayableAmount, BufferAmount, AdditionalreasonIDs, Discount, Copay, Remarks, ICDCode, ICDName, DiseaseCode, PCSCode, PCSDescription, EligibleAmount, AdditionalAmount, BPCoverageLimit, ProcessHTML, Overridepackage, Overridesuminsured, PolicySublimit, AlimentExpression, Alimentpower, PackageType
+
+
 debug
 : 
 true
