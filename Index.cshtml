@@ -8505,6 +8505,7 @@
                     var lineOfTreatment      = event.data.lineOfTreatment      || '';
                     var presentingComplaint  = event.data.presentingComplaint  || '';
                     var hospTreatmentKeyword = event.data.hospTreatmentKeyword || '';
+                    var icdSlots             = event.data.icdSlots             || [];
 
                     // Probable Diagnosis → txtProbableDiagnosis
                     if (diagnosis) {
@@ -8543,6 +8544,158 @@
                         }
                     }
 
+                    // ── Full Coding Section Automation ────────────────────────────────────
+                    var procedureHint = (event.data.procedureHint || '').toLowerCase();
+
+                    if (typeof MasterData === 'undefined') return;
+
+                    // ── Step 1: Match procedure → TPAProcedureID from mTPAProcedurecs ────
+                    var claimAI_TPAProcID = null;
+                    var claimAI_Level1Text = '';
+                    var claimAI_Level2Text = '';
+                    var claimAI_Level3Text = '';
+
+                    try {
+                        var tpaList = $.isArray(MasterData.mTPAProcedurecs)
+                            ? MasterData.mTPAProcedurecs
+                            : $.parseJSON(MasterData.mTPAProcedurecs);
+
+                        // Procedure mapping rules: keyword → preferred Level3 text patterns
+                        var procRules = [
+                            { kws: ['mics','micro incision'], l2: 'Cataract Surgery',
+                              l3Right: 'MICS - Unifocal (Lens Included) - Right',
+                              l3Left:  'MICS - Unifocal (Lens Included) - Left',
+                              l3Both:  'MICS - Unifocal (Lens Included) - Right' },
+                            { kws: ['multifocal','multi focal'], l2: 'Cataract Surgery',
+                              l3Right: 'Cataract Surgery Phacoemulsification - Multifocal Lens - Right',
+                              l3Left:  'Cataract Surgery Phacoemulsification - Multifocal Lens - Left',
+                              l3Both:  'Cataract Surgery Phacoemulsification - Multifocal Lens - Right' },
+                            { kws: ['toric'], l2: 'Cataract Surgery',
+                              l3Right: 'Phaco with TORIC Lens (Any Lens) - Right',
+                              l3Left:  'Phaco with TORIC Lens (Any Lens) - Left',
+                              l3Both:  'Phaco with TORIC Lens (Any Lens) - Right' },
+                            { kws: ['phaco','phacoemulsification','cataract','senile cataract','nuclear cataract','cortical cataract'], l2: 'Cataract Surgery',
+                              l3Right: 'Cataract Surgery Phacoemulsification - Unifocal Lens - Right',
+                              l3Left:  'Cataract Surgery Phacoemulsification - Unifocal Lens - Left',
+                              l3Both:  'Cataract Surgery Phacoemulsification - Unifocal Lens - Right' },
+                            { kws: ['trabeculectomy','glaucoma'], l2: 'Glaucoma',
+                              l3Right: 'Trabeculectomy - Right', l3Left: 'Trabeculectomy - Left', l3Both: 'Trabeculectomy - Right' },
+                            { kws: ['vitrectomy','vitreous','vitreal'], l2: 'Vitreal Surgery',
+                              l3Right: 'Vitrectomy - Right', l3Left: 'Vitrectomy - Left', l3Both: 'Vitrectomy - Right' },
+                            { kws: ['retinal detachment','scleral buckle'], l2: 'Retinal Detachment',
+                              l3Right: 'Retinal Detachment (Scleral Buckle) - Right',
+                              l3Left:  'Retinal Detachment (Scleral Buckle) - Left',
+                              l3Both:  'Retinal Detachment (Scleral Buckle) - Right' },
+                            { kws: ['anti-vegf','vegf','macular degeneration','intravitreal'], l2: 'Macular Degeneration',
+                              l3Right: 'Intravitreal Anti-VEGF Injection (Monthly)',
+                              l3Left:  'Intravitreal Anti-VEGF Injection (Monthly)',
+                              l3Both:  'Intravitreal Anti-VEGF Injection (Monthly)' },
+                            { kws: ['lasik','high myopia','myopia','c3r','collagen cross'], l2: 'High Myopia',
+                              l3Right: 'LASIK - Right', l3Left: 'LASIK - Left', l3Both: 'Corneal Collagen Cross Linking (C3R) - Both Eyes' },
+                            { kws: ['pterygium','keratoplasty','corneal'], l2: 'Corneal Surgery',
+                              l3Right: 'Pterygium - Right Eye', l3Left: 'Pterygium - Left Eye', l3Both: 'Keratoplasty' },
+                            { kws: ['ectropion','entropion','eyelid'], l2: 'Eyelid Surgery',
+                              l3Right: 'Ectropion - Upper Eyelid - Right', l3Left: 'Ectropion - Upper Eyelid - Left', l3Both: 'Ectropion - Upper Eyelid - Right' },
+                        ];
+
+                        // Detect laterality
+                        var isRight = /right/.test(procedureHint);
+                        var isLeft  = /left/.test(procedureHint);
+                        var isBilat = /bilateral|both/.test(procedureHint);
+
+                        var targetL3 = null;
+                        var targetL2 = null;
+                        for (var ri = 0; ri < procRules.length; ri++) {
+                            var rule = procRules[ri];
+                            var matched = rule.kws.some(function(kw) { return procedureHint.indexOf(kw) !== -1; });
+                            if (matched) {
+                                targetL2 = rule.l2;
+                                if (isBilat)      targetL3 = rule.l3Both;
+                                else if (isLeft)  targetL3 = rule.l3Left;
+                                else if (isRight) targetL3 = rule.l3Right;
+                                else              targetL3 = rule.l3Right; // default right
+                                break;
+                            }
+                        }
+
+                        if (targetL3) {
+                            // Find matching row in mTPAProcedurecs
+                            var l3Norm = targetL3.toLowerCase();
+                            for (var ti = 0; ti < tpaList.length; ti++) {
+                                var tpa = tpaList[ti];
+                                var tl3 = (tpa.Level3 || tpa.level3 || tpa.TPALevel3 || tpa.Name || '').toString().toLowerCase();
+                                if (tl3 === l3Norm || tl3.indexOf(l3Norm) !== -1 || l3Norm.indexOf(tl3) !== -1) {
+                                    claimAI_TPAProcID  = tpa.ID   || tpa.Id   || tpa.id   || null;
+                                    claimAI_Level1Text = tpa.Level1 || tpa.level1 || 'Ophthalmology';
+                                    claimAI_Level2Text = tpa.Level2 || tpa.level2 || targetL2;
+                                    claimAI_Level3Text = tpa.Level3 || tpa.level3 || targetL3;
+                                    break;
+                                }
+                            }
+                            if (!claimAI_TPAProcID) {
+                                // Fallback: match by Level2 to get category-level ID
+                                var l2Norm = targetL2.toLowerCase();
+                                for (var ti2 = 0; ti2 < tpaList.length; ti2++) {
+                                    var tpa2 = tpaList[ti2];
+                                    var tl2 = (tpa2.Level2 || tpa2.level2 || '').toString().toLowerCase();
+                                    var tl3b = (tpa2.Level3 || tpa2.level3 || '').toString().toLowerCase();
+                                    if (tl2 === l2Norm && tl3b === l2Norm) {
+                                        claimAI_TPAProcID  = tpa2.ID || tpa2.Id || tpa2.id || null;
+                                        claimAI_Level1Text = tpa2.Level1 || 'Ophthalmology';
+                                        claimAI_Level2Text = targetL2;
+                                        claimAI_Level3Text = targetL2;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch(e) { console.warn('[ClaimAI] Procedure match error:', e); }
+
+                    // ── Step 2: Match ICD code → numeric ID from MasterData.ICD10 ────────
+                    var claimAI_ICDCodeID = 0;
+                    var claimAI_ICDName   = '';
+                    var claimAI_DiseaseCode = '';
+
+                    if (icdSlots && icdSlots.length > 0 && MasterData.ICD10) {
+                        try {
+                            var icd10List = $.isArray(MasterData.ICD10) ? MasterData.ICD10 : $.parseJSON(MasterData.ICD10);
+
+                            // Find most specific slot
+                            var mostSpecificSlot = null;
+                            for (var si = icdSlots.length - 1; si >= 0; si--) {
+                                if (icdSlots[si] && icdSlots[si].code) { mostSpecificSlot = icdSlots[si]; break; }
+                            }
+
+                            if (mostSpecificSlot) {
+                                for (var mi = 0; mi < icd10List.length; mi++) {
+                                    var icdItem = icd10List[mi];
+                                    var dc = (icdItem.DiseaseCode || icdItem.diseaseCode || icdItem.Code || icdItem.code || '').toString().trim();
+                                    if (dc.toLowerCase() === mostSpecificSlot.code.toLowerCase()) {
+                                        claimAI_ICDCodeID   = icdItem.ID   || icdItem.Id   || icdItem.id   || 0;
+                                        claimAI_ICDName     = icdItem.Name || icdItem.name || mostSpecificSlot.description || '';
+                                        claimAI_DiseaseCode = dc;
+                                        break;
+                                    }
+                                }
+                                // Fallback: use code string if no match
+                                if (!claimAI_ICDCodeID) {
+                                    claimAI_ICDName     = mostSpecificSlot.description || '';
+                                    claimAI_DiseaseCode = mostSpecificSlot.code || '';
+                                }
+                            }
+                        } catch(e) { console.warn('[ClaimAI] ICD match error:', e); }
+                    }
+
+                    // ── Step 3: Build coding row and save via AJAX ───────────────────────
+                    if (claimAI_TPAProcID && claimAI_DiseaseCode) {
+                        setTimeout(function() {
+                            claimAI_saveCodingRow(claimAI_TPAProcID, claimAI_Level1Text, claimAI_Level2Text,
+                                claimAI_Level3Text, claimAI_ICDCodeID, claimAI_ICDName, claimAI_DiseaseCode);
+                        }, 800);
+                    } else {
+                        console.warn('[ClaimAI] Coding: TPAProcID=' + claimAI_TPAProcID + ' DiseaseCode=' + claimAI_DiseaseCode + ' — not saving coding');
+                    }
+
                     // Auto-save: call dedicated ClaimAI endpoint — no page refresh
                     setTimeout(function () {
                         var claimDetailsId = $('#hdnClaimDetailsID').val() || '';
@@ -8551,7 +8704,6 @@
                         // Read approved facility — prefer stored value (set before setClinicalDetails fires)
                         // then fall back to current dropdown value
                         var approvedFacId = window._claimAI_approvedFacilityId || $('#ddlApprovedFacility').val() || '';
-                        console.log('[ClaimAI] approvedFacId:', approvedFacId, 'ddl val:', $('#ddlApprovedFacility').val());
 
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
@@ -8703,6 +8855,105 @@
 
 
             $(document).ready(function () {
+
+                // ── ClaimAI: Save Coding Row function ──────────────────────────────────
+                window.claimAI_saveCodingRow = function(tpaProcID, level1, level2, level3, icdCodeID, icdName, diseaseCode) {
+                    try {
+                        var claimID = $('#hdnClaimID').val();
+                        var slNo    = $('#hdnClaimSlNo').val();
+                        var billingType = $('#hdnBillingType').val() || '0';
+
+                        // Build coding row JSON matching the structure Save_CodingDetails expects
+                        // Required fields based on DataTable columns (ICDName & DiseaseCode removed before SP call)
+                        var codingRow = {
+                            TPAProcedureID:          tpaProcID,
+                            TPALevel1:               level1 || '',
+                            TPALevel2:               level2 || '',
+                            TPALevel3:               level3 || '',
+                            ICDCode:                 icdCodeID || 0,
+                            ICDName:                 icdName   || '',
+                            DiseaseCode:             diseaseCode || '',
+                            PCSCode:                 null,
+                            SICategery:              69,       // base SI category
+                            isGipsa:                 false,
+                            isCI:                    false,
+                            isPED:                   false,
+                            isDayCare:               false,
+                            TreatmentType:           'Surgical',
+                            TypeOfAnesthesiaID:      null,
+                            ExcludedItems:           null,
+                            SurgeryDate:             null,
+                            PackageRate:             null,
+                            ReckonRate:              null,
+                            Discount:                0,
+                            BillAmount:              parseFloat($('#txtTotalServicesBillAmount').val()) || 0,
+                            EligibleBillAmount:      parseFloat($('#txtTotalServicesBillAmount').val()) || 0,
+                            DisallowedAmount:        0,
+                            DisallowedReason:        null,
+                            PayableAmount:           parseFloat($('#txtTotalServicesBillAmount').val()) || 0,
+                            BufferAmount:            0,
+                            AdditionalAmount:        0,
+                            AdditionalAmountReason:  null,
+                            Remarks:                 null,
+                            PolicySublimit:          false,
+                            OverridePackage:         false,
+                            OverrideSumInsured:      false,
+                            isAutoClaimAI:           true,    // marker for ClaimAI auto-fill
+                        };
+
+                        // Check if a coding row already exists — if so, update it, else add
+                        var existingCoding = [];
+                        if ($('#hdnClaimsCodingDetails').val()) {
+                            try { existingCoding = $.parseJSON($('#hdnClaimsCodingDetails').val()) || []; } catch(e) { existingCoding = []; }
+                        }
+
+                        // Replace or add
+                        var updated = false;
+                        for (var i = 0; i < existingCoding.length; i++) {
+                            if (existingCoding[i].TPAProcedureID == tpaProcID || existingCoding[i].isAutoClaimAI) {
+                                existingCoding[i] = $.extend(existingCoding[i], codingRow);
+                                updated = true;
+                                break;
+                            }
+                        }
+                        if (!updated) existingCoding.push(codingRow);
+
+                        var codingJSON = JSON.stringify(existingCoding);
+
+                        // Save via Save_CodingDetails endpoint
+                        $.ajax({
+                            url: '@Url.Action("Save_CodingDetails", "MedicalScrutiny")',
+                            type: 'POST',
+                            data: {
+                                ClaimsCoding: codingJSON,
+                                ClaimId:      claimID,
+                                SlNo:         slNo,
+                                BillingType:  billingType
+                            },
+                            success: function(res) {
+                                console.log('[ClaimAI] Coding saved:', res);
+                                // Refresh coding table display
+                                if (typeof Retrieve_ClaimsCodingDetails === 'function') {
+                                    Retrieve_ClaimsCodingDetails(claimID, slNo, 0);
+                                }
+                                var $toast = $('<div/>')
+                                    .text('✓ Coding details saved')
+                                    .css({ position:'fixed', bottom:'50px', right:'20px',
+                                           background:'#2d6a9f', color:'#fff',
+                                           padding:'8px 14px', borderRadius:'4px',
+                                           fontSize:'13px', zIndex:99999,
+                                           boxShadow:'0 2px 6px rgba(0,0,0,0.2)' })
+                                    .appendTo('body');
+                                setTimeout(function() { $toast.fadeOut(400, function(){ $toast.remove(); }); }, 3000);
+                            },
+                            error: function(xhr) {
+                                console.warn('[ClaimAI] Coding save failed:', xhr.responseText);
+                            }
+                        });
+                    } catch(e) {
+                        console.error('[ClaimAI] claimAI_saveCodingRow error:', e);
+                    }
+                };
 
                 $("#btnSaveBimaSatarDetails").on('click', function (e) {
                     $("#hndSRF_ID_on_Covid_Report").val($("#txtSRF_ID_on_Covid_Report").val())
