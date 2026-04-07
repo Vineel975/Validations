@@ -1,3 +1,5 @@
+[ClaimAI] Coding saved: {success: true, message: 'Saved Successfully'}
+
 message
 : 
 "COLS35: TPAProcedureID|TPALevel1|TPALevel2|TPALevel3|PackageRate|PackageRatio|TreatementTypeID_19|isGipsa|isDayCare|isCI|isPED|TypeOfAnesthesiaID|Exclusions|SurgeryDate|BillAmount|DisallowedAmount|DisallowedReasonIDs|PayableAmount|BufferAmount|AdditionalreasonIDs|Discount|Copay|Remarks|ICDCode|PCSCode|PCSDescription|EligibleAmount|AdditionalAmount|BPCoverageLimit|Overridepackage|Overridesuminsured|PolicySublimit|AlimentExpression|Alimentpower|PackageType"
