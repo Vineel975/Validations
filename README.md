@@ -1,3 +1,6 @@
+ID          DiseaseCode                                        Name                                                                                                                                                                                                                                                             ParentID    Createddatetime         Modifieddatetime        Deleted Level GCCode                                             GCDescription                                                                                                                                                                                                                                                    OrderID     CommonName
+
+
 [ClaimAI] Coding save returned failure: {success: false, message: 'TPAProcedureID=495, ICDCode=0, BillType=0, ClaimID=26040206200, SlNo=1'}
 
 [ClaimAI] Coding saved: {success: true, message: 'Saved Successfully'}
