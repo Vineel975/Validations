@@ -588,10 +588,7 @@ export function ResultView({
   }, [state?.claimId]);
 
   const sendAccommodationToSpectra = async () => {
-    console.log("[ClaimAI] sendAccommodationToSpectra called, isIframe:", window.parent !== window);
-    try {
     if (!(window.parent && window.parent !== window)) {
-      console.warn("[ClaimAI] Not in iframe, skipping postMessage");
       return;
     }
 
@@ -632,26 +629,10 @@ export function ResultView({
         ? "medical"
         : null;
 
-    // Collect ICD codes from the /api/icd?diagnosis endpoint to send to Spectra
-    let icdSlots: Array<{ code: string; description: string; level: number } | null> = [];
-    if (diagnosis) {
-      try {
-        const icdRes = await fetch(`/api/icd?diagnosis=${encodeURIComponent(diagnosis)}`);
-        if (icdRes.ok) {
-          const icdData = await icdRes.json() as { slots?: typeof icdSlots };
-          icdSlots = icdData.slots ?? [];
-        }
-      } catch { /* ignore */ }
-    }
-
-    // Infer procedure levels (Level1/Level2/Level3) from diagnosis + lineOfTreatment
     const procedureHint = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
-
-    // Eligible amount from financial summary
-    // Use insurerPayable from claimCalculation as the eligible amount
     const eligibleAmount = claimCalculation?.insurerPayable ?? 0;
 
-    console.log("[ClaimAI] About to postMessage setClinicalDetails:", { diagnosis, lineOfTreatment, presentingComplaint: presentingComplaint.trim(), hospTreatmentKeyword, eligibleAmount, icdSlotsCount: icdSlots.length });
+    // Send clinical details immediately — don't wait for ICD fetch
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
       window.parent.postMessage(
         {
@@ -661,15 +642,37 @@ export function ResultView({
           lineOfTreatment:      lineOfTreatment       ?? "",
           presentingComplaint:  presentingComplaint.trim(),
           hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
-          icdSlots:             icdSlots,
+          icdSlots:             [],          // sent separately below after fetch
           procedureHint:        procedureHint,
           eligibleAmount:       eligibleAmount,
         },
         "*",
       );
     }
-    } catch(e) {
-      console.error("[ClaimAI] sendAccommodationToSpectra error:", e);
+
+    // Fetch ICD codes in background and send as separate message
+    if (diagnosis) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const icdRes = await fetch(`/api/icd?diagnosis=${encodeURIComponent(diagnosis)}`, { signal: controller.signal });
+        clearTimeout(timer);
+        if (icdRes.ok) {
+          const icdData = await icdRes.json() as { slots?: Array<{ code: string; description: string; level: number } | null> };
+          const icdSlots = icdData.slots ?? [];
+          // Send ICD slots as a separate message after fetch completes
+          window.parent.postMessage(
+            {
+              source:        "claimai",
+              type:          "setIcdSlots",
+              icdSlots,
+              procedureHint,
+              eligibleAmount,
+            },
+            "*",
+          );
+        }
+      } catch { /* ignore */ }
     }
   };
 
