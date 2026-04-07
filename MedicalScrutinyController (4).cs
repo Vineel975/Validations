@@ -7884,8 +7884,6 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("Copay",                typeof(object));
                 dt.Columns.Add("Remarks",              typeof(object));
                 dt.Columns.Add("ICDCode",              typeof(object));
-                dt.Columns.Add("ICDName",              typeof(object));
-                dt.Columns.Add("DiseaseCode",          typeof(object));
                 dt.Columns.Add("PCSCode",              typeof(object));
                 dt.Columns.Add("PCSDescription",       typeof(object));
                 dt.Columns.Add("EligibleAmount",       typeof(object));
@@ -7924,8 +7922,6 @@ namespace Enrollment.Controllers
                 newRow["Copay"]              = 0;
                 newRow["Remarks"]            = DBNull.Value;
                 newRow["ICDCode"]            = icdId > 0 ? (object)icdId : DBNull.Value;
-                newRow["ICDName"]            = !string.IsNullOrEmpty(icdName) ? (object)icdName : DBNull.Value;
-                newRow["DiseaseCode"]        = !string.IsNullOrEmpty(diseaseCode) ? (object)diseaseCode : DBNull.Value;
                 newRow["PCSCode"]            = DBNull.Value;
                 newRow["PCSDescription"]     = DBNull.Value;
                 newRow["EligibleAmount"]     = 0;
@@ -7940,15 +7936,28 @@ namespace Enrollment.Controllers
                 newRow["PackageType"]        = DBNull.Value;
                 dt.Rows.Add(newRow);
 
-                // Call the same standalone Save_CodingDetails used when user saves manually
-                string codingJson = Newtonsoft.Json.JsonConvert.SerializeObject(dt);
-                string saveResult = Save_CodingDetails(codingJson, claimId, slNo, (billType > 0 ? billType.ToString() : "0"));
-                bool isSuccess = saveResult != null &&
-                    !saveResult.StartsWith("ErrorCode") &&
-                    !saveResult.Contains("does not belong") &&
-                    !saveResult.ToLower().Contains("error");
+                // Remove display-only columns — same as main POST handler does
+                // SP expects exactly 35 columns
+                // Full schema = 36, remove ICDName+DiseaseCode = 34... 
+                // TPALevel1/2/3 and PCSDescription are also display-only
+                foreach (var col in new[] { "ICDName", "DiseaseCode", "PCSDescription",
+                                            "TPALevel1", "TPALevel2", "TPALevel3",
+                                            "ProcessHTML" })
+                    if (dt.Columns.Contains(col)) dt.Columns.Remove(col);
 
-                return Json(new { success = isSuccess, message = saveResult });
+                // Log column count for debugging
+                vMessage = "COL_COUNT:" + dt.Columns.Count;
+
+                // Call VM directly
+                int result = _objMadicalScrutinyVM.Save_CodingDetails(
+                    claimIdLong, slNoInt, billType, dt,
+                    Convert.ToInt32(Session[SessionValue.UserRegionID]),
+                    out vMessage);
+
+                bool isSuccess = result > 0 ||
+                    (vMessage != null && vMessage.ToLower().Contains("success"));
+
+                return Json(new { success = isSuccess, message = vMessage });
             }
             catch (Exception ex)
             {
