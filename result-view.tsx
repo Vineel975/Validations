@@ -646,8 +646,8 @@ export function ResultView({
     const procedureHint = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
 
     // Eligible amount from financial summary
-    const eligibleAmount = (displayAnalysis?.financialSummary as { totalApprovedAmount?: number } | null | undefined)
-        ?.totalApprovedAmount ?? 0;
+    // Use insurerPayable from claimCalculation as the eligible amount
+    const eligibleAmount = claimCalculation?.insurerPayable ?? 0;
 
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
       window.parent.postMessage(
