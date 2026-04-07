@@ -8474,14 +8474,7 @@
                 checkBufferClaim();
             }
 
-            // Debug: log ALL incoming messages
-            window.addEventListener('message', function(event) {
-                if (event.data && typeof event.data === 'object') {
-                    console.log('[ClaimAI] RAW message received:', JSON.stringify(event.data).substring(0, 200));
-                }
-            });
-
-            // Listen for postMessage from ClaimAI iframe — sets Aprv Accommodation on Save
+            // Listen for postMessage from ClaimAI iframe
             window.addEventListener('message', function(event) {
                 if (!event.data || event.data.source !== 'claimai') return;
 
@@ -8508,12 +8501,6 @@
                 }
 
                 if (event.data.type === 'setClinicalDetails') {
-                    console.log('[ClaimAI] setClinicalDetails received:', JSON.stringify({
-                        diagnosis: event.data.diagnosis,
-                        procedureHint: event.data.procedureHint,
-                        eligibleAmount: event.data.eligibleAmount,
-                        icdSlotsCount: (event.data.icdSlots||[]).length
-                    }));
                     var diagnosis            = event.data.diagnosis            || '';
                     var lineOfTreatment      = event.data.lineOfTreatment      || '';
                     var presentingComplaint  = event.data.presentingComplaint  || '';
@@ -8558,204 +8545,9 @@
                         }
                     }
 
-                    // ── Full Coding Section Automation ────────────────────────────────────
-                    var procedureHint = (event.data.procedureHint || '').toLowerCase();
+                    // Coding save is handled by setIcdSlots postMessage (sent after ICD fetch)
 
-                    if (typeof MasterData === 'undefined') return;
-
-                    // ── Step 1: Match procedure → TPAProcedureID from mTPAProcedurecs ────
-                    var claimAI_TPAProcID = null;
-                    var claimAI_Level1Text = '';
-                    var claimAI_Level2Text = '';
-                    var claimAI_Level3Text = '';
-
-                    try {
-                        var tpaList = $.isArray(MasterData.mTPAProcedurecs)
-                            ? MasterData.mTPAProcedurecs
-                            : $.parseJSON(MasterData.mTPAProcedurecs);
-
-                        // Procedure mapping rules: keyword → preferred Level3 text patterns
-                        var procRules = [
-                            { kws: ['mics','micro incision'], l2: 'Cataract Surgery',
-                              l3Right: 'MICS - Unifocal (Lens Included) - Right',
-                              l3Left:  'MICS - Unifocal (Lens Included) - Left',
-                              l3Both:  'MICS - Unifocal (Lens Included) - Right' },
-                            { kws: ['multifocal','multi focal'], l2: 'Cataract Surgery',
-                              l3Right: 'Cataract Surgery Phacoemulsification - Multifocal Lens - Right',
-                              l3Left:  'Cataract Surgery Phacoemulsification - Multifocal Lens - Left',
-                              l3Both:  'Cataract Surgery Phacoemulsification - Multifocal Lens - Right' },
-                            { kws: ['toric'], l2: 'Cataract Surgery',
-                              l3Right: 'Phaco with TORIC Lens (Any Lens) - Right',
-                              l3Left:  'Phaco with TORIC Lens (Any Lens) - Left',
-                              l3Both:  'Phaco with TORIC Lens (Any Lens) - Right' },
-                            { kws: ['phaco','phacoemulsification','cataract','senile cataract','nuclear cataract','cortical cataract'], l2: 'Cataract Surgery',
-                              l3Right: 'Cataract Surgery Phacoemulsification - Unifocal Lens - Right',
-                              l3Left:  'Cataract Surgery Phacoemulsification - Unifocal Lens - Left',
-                              l3Both:  'Cataract Surgery Phacoemulsification - Unifocal Lens - Right' },
-                            { kws: ['trabeculectomy','glaucoma'], l2: 'Glaucoma',
-                              l3Right: 'Trabeculectomy - Right', l3Left: 'Trabeculectomy - Left', l3Both: 'Trabeculectomy - Right' },
-                            { kws: ['vitrectomy','vitreous','vitreal'], l2: 'Vitreal Surgery',
-                              l3Right: 'Vitrectomy - Right', l3Left: 'Vitrectomy - Left', l3Both: 'Vitrectomy - Right' },
-                            { kws: ['retinal detachment','scleral buckle'], l2: 'Retinal Detachment',
-                              l3Right: 'Retinal Detachment (Scleral Buckle) - Right',
-                              l3Left:  'Retinal Detachment (Scleral Buckle) - Left',
-                              l3Both:  'Retinal Detachment (Scleral Buckle) - Right' },
-                            { kws: ['anti-vegf','vegf','macular degeneration','intravitreal'], l2: 'Macular Degeneration',
-                              l3Right: 'Intravitreal Anti-VEGF Injection (Monthly)',
-                              l3Left:  'Intravitreal Anti-VEGF Injection (Monthly)',
-                              l3Both:  'Intravitreal Anti-VEGF Injection (Monthly)' },
-                            { kws: ['lasik','high myopia','myopia','c3r','collagen cross'], l2: 'High Myopia',
-                              l3Right: 'LASIK - Right', l3Left: 'LASIK - Left', l3Both: 'Corneal Collagen Cross Linking (C3R) - Both Eyes' },
-                            { kws: ['pterygium','keratoplasty','corneal'], l2: 'Corneal Surgery',
-                              l3Right: 'Pterygium - Right Eye', l3Left: 'Pterygium - Left Eye', l3Both: 'Keratoplasty' },
-                            { kws: ['ectropion','entropion','eyelid'], l2: 'Eyelid Surgery',
-                              l3Right: 'Ectropion - Upper Eyelid - Right', l3Left: 'Ectropion - Upper Eyelid - Left', l3Both: 'Ectropion - Upper Eyelid - Right' },
-                        ];
-
-                        // Detect laterality
-                        var isRight = /right/.test(procedureHint);
-                        var isLeft  = /left/.test(procedureHint);
-                        var isBilat = /bilateral|both/.test(procedureHint);
-
-                        var targetL3 = null;
-                        var targetL2 = null;
-                        for (var ri = 0; ri < procRules.length; ri++) {
-                            var rule = procRules[ri];
-                            var matched = rule.kws.some(function(kw) { return procedureHint.indexOf(kw) !== -1; });
-                            if (matched) {
-                                targetL2 = rule.l2;
-                                if (isBilat)      targetL3 = rule.l3Both;
-                                else if (isLeft)  targetL3 = rule.l3Left;
-                                else if (isRight) targetL3 = rule.l3Right;
-                                else              targetL3 = rule.l3Right; // default right
-                                break;
-                            }
-                        }
-
-                        if (targetL3) {
-                            // Name field confirmed as procedure name field in mTPAProcedurecs
-                            // Also Level3 field has the name. Match by Name field with fuzzy matching.
-                            var l3Norm = targetL3.toLowerCase().replace(/[\s\-–()]/g, '');
-                            var bestScore = 0;
-                            for (var ti = 0; ti < tpaList.length; ti++) {
-                                var tpa = tpaList[ti];
-                                // Use Name field (confirmed) and Level3 as fallback
-                                var tpaName = (tpa.Name || tpa.Level3 || '').toString().toLowerCase();
-                                var tpaNameNorm = tpaName.replace(/[\s\-–()]/g, '');
-                                var score = 0;
-                                if (tpaNameNorm === l3Norm) {
-                                    score = 100; // exact
-                                } else if (tpaNameNorm.indexOf(l3Norm) !== -1 || l3Norm.indexOf(tpaNameNorm) !== -1) {
-                                    score = 80;
-                                } else {
-                                    // Word overlap score
-                                    var words = l3Norm.split('');
-                                    var matched = 0;
-                                    targetL3.toLowerCase().split(/\s+/).forEach(function(w) {
-                                        if (w.length > 2 && tpaName.indexOf(w) !== -1) matched++;
-                                    });
-                                    score = matched * 10;
-                                }
-                                if (score > bestScore) {
-                                    bestScore = score;
-                                    claimAI_TPAProcID  = tpa.ID;
-                                    claimAI_Level1Text = tpa.Level1 || '';
-                                    claimAI_Level2Text = tpa.Level2 || '';
-                                    claimAI_Level3Text = tpa.Name   || tpa.Level3 || '';
-                                }
-                            }
-                            if (claimAI_TPAProcID && bestScore >= 30) {
-                                // Also resolve numeric parent IDs for TPALevel1/2/3
-                                // Build ID map for fast lookup
-                                var tpaIDMap = {};
-                                for (var im = 0; im < tpaList.length; im++) {
-                                    tpaIDMap[tpaList[im].ID] = tpaList[im];
-                                }
-                                // Walk parent chain to get Level1ID, Level2ID
-                                var matchedTPA = tpaIDMap[claimAI_TPAProcID];
-                                var parentID  = matchedTPA ? (matchedTPA.ParentID || 0) : 0;
-                                var parentItem = parentID ? tpaIDMap[parentID] : null;
-                                var grandParentID = parentItem ? (parentItem.ParentID || 0) : 0;
-
-                                window._claimAI_TPALevel1ID = grandParentID || parentID || 0;
-                                window._claimAI_TPALevel2ID = parentID || 0;
-                                window._claimAI_TPALevel3ID = claimAI_TPAProcID;
-
-                                console.log('[ClaimAI] TPA matched:', claimAI_TPAProcID,
-                                    'L1ID:', window._claimAI_TPALevel1ID,
-                                    'L2ID:', window._claimAI_TPALevel2ID,
-                                    'L3ID:', window._claimAI_TPALevel3ID,
-                                    'score:', bestScore);
-                            } else {
-                                claimAI_TPAProcID = null;
-                                console.warn('[ClaimAI] TPA no match for:', targetL3);
-                            }
-                        }
-                    } catch(e) { console.warn('[ClaimAI] Procedure match error:', e); }
-
-                    // ── Step 2: Match ICD code → numeric ID from MasterData.ICD10 ────────
-                    var claimAI_ICDCodeID = 0;
-                    var claimAI_ICDName   = '';
-                    var claimAI_DiseaseCode = '';
-
-                    if (icdSlots && icdSlots.length > 0 && MasterData.ICD10) {
-                        try {
-                            var icd10List = $.isArray(MasterData.ICD10) ? MasterData.ICD10 : $.parseJSON(MasterData.ICD10);
-
-                            // Find most specific slot
-                            var mostSpecificSlot = null;
-                            for (var si = icdSlots.length - 1; si >= 0; si--) {
-                                if (icdSlots[si] && icdSlots[si].code) { mostSpecificSlot = icdSlots[si]; break; }
-                            }
-
-                            if (mostSpecificSlot) {
-                                for (var mi = 0; mi < icd10List.length; mi++) {
-                                    var icdItem = icd10List[mi];
-                                    var dc = (icdItem.DiseaseCode || icdItem.diseaseCode || icdItem.Code || icdItem.code || '').toString().trim();
-                                    if (dc.toLowerCase() === mostSpecificSlot.code.toLowerCase()) {
-                                        claimAI_ICDCodeID   = icdItem.ID   || icdItem.Id   || icdItem.id   || 0;
-                                        claimAI_ICDName     = icdItem.Name || icdItem.name || mostSpecificSlot.description || '';
-                                        claimAI_DiseaseCode = dc;
-                                        break;
-                                    }
-                                }
-                                // Fallback: use code string if no match
-                                if (!claimAI_ICDCodeID) {
-                                    claimAI_ICDName     = mostSpecificSlot.description || '';
-                                    claimAI_DiseaseCode = mostSpecificSlot.code || '';
-                                }
-                            }
-                        } catch(e) { console.warn('[ClaimAI] ICD match error:', e); }
-                    }
-
-                    // ── Step 3: Build coding row and save via AJAX ───────────────────────
-                    // Get the most specific (last non-null) ICD code string from icdSlots
-                    var lastIcdCode = '';
-                    var lastIcdDesc = '';
-                    if (icdSlots && icdSlots.length > 0) {
-                        for (var si7 = icdSlots.length - 1; si7 >= 0; si7--) {
-                            if (icdSlots[si7] && icdSlots[si7].code) {
-                                lastIcdCode = icdSlots[si7].code;
-                                lastIcdDesc = icdSlots[si7].description || '';
-                                break;
-                            }
-                        }
-                    }
-
-                    if (claimAI_TPAProcID) {
-                        setTimeout(function() {
-                            claimAI_saveCodingRow(
-                                claimAI_TPAProcID,
-                                lastIcdCode,
-                                eligibleAmount
-                            );
-                        }, 800);
-                    } else {
-                    } else {
-                        console.warn('[ClaimAI] Coding: TPAProcID=' + claimAI_TPAProcID + ' DiseaseCode=' + claimAI_DiseaseCode + ' — not saving coding');
-                    }
-
-                    // Auto-save: call dedicated ClaimAI endpoint — no page refresh
+                    // Auto-save hospitalization details
                     setTimeout(function () {
                         var claimDetailsId = $('#hdnClaimDetailsID').val() || '';
                         var hospTypeId     = $('#ddlHospTreatmentType').val() || '';
@@ -8796,6 +8588,71 @@
                             }
                         });
                     }, 500);
+                }
+
+                // ICD slots arrive after async fetch — triggers coding save
+                if (event.data.type === 'setIcdSlots') {
+                    var icdSlots2      = event.data.icdSlots      || [];
+                    var procedureHint2 = (event.data.procedureHint || '').toLowerCase();
+                    var eligibleAmt2   = event.data.eligibleAmount  || 0;
+
+                    // Most specific ICD code = last non-null slot
+                    var lastIcdCode2 = '';
+                    for (var si2 = icdSlots2.length - 1; si2 >= 0; si2--) {
+                        if (icdSlots2[si2] && icdSlots2[si2].code) { lastIcdCode2 = icdSlots2[si2].code; break; }
+                    }
+
+                    // Match procedure from TPA master using exact Level3 names from DB
+                    var procID2 = null;
+                    try {
+                        var tpaList2 = $.isArray(MasterData.mTPAProcedurecs)
+                            ? MasterData.mTPAProcedurecs : $.parseJSON(MasterData.mTPAProcedurecs);
+
+                        var isRight2 = /right/.test(procedureHint2);
+                        var isLeft2  = /left/.test(procedureHint2);
+
+                        var procRules2 = [
+                            { kws: ['mics','micro incision'], l3r: 'MICS - Unifocal (Lens Included)-Right', l3l: 'MICS -Unifocal (Lens Included)-Left' },
+                            { kws: ['multifocal'], l3r: 'MICS -Multifocal (Lens Included)-Right', l3l: 'MICS-Multifocal (Lens Included)-Left' },
+                            { kws: ['toric'], l3r: 'Phaco with TORIC Lens(Any Lens)-Right', l3l: 'Phaco with TORIC Lens(Any Lens)-Left' },
+                            { kws: ['phaco','phacoemulsification','cataract','senile','nuclear cataract','cortical'], l3r: 'Cataract Surgery Phacoemulsification -Unifocal Lens-Right', l3l: 'Cataract Surgery Phacoemulsification -Unifocal Lens-Left' },
+                            { kws: ['trabeculectomy','glaucoma'], l3r: 'Trabeculectomy-Right', l3l: 'Trabeculectomy-Left' },
+                            { kws: ['vitrectomy','vitreous','vitreal'], l3r: 'Vitrectomy-Right', l3l: 'Vitrectomy-Left' },
+                            { kws: ['retinal detachment'], l3r: 'Retinal Detachment (Scleral Buckle)-Right', l3l: 'Retinal Detachment (Scleral Buckle)-Left' },
+                            { kws: ['vegf','macular degeneration','intravitreal'], l3r: 'Monthly Intravitreal Anti-VEGF - Per Injection', l3l: 'Monthly Intravitreal Anti-VEGF - Per Injection' },
+                            { kws: ['lasik'], l3r: 'LASIK-Right', l3l: 'LASIK-Left' },
+                            { kws: ['pterygium'], l3r: 'Pterygium- Right Eye', l3l: 'Pterygium-Left Eye' },
+                        ];
+
+                        var targetL3_2 = null;
+                        for (var ri2 = 0; ri2 < procRules2.length; ri2++) {
+                            var rr = procRules2[ri2];
+                            if (rr.kws.some(function(kw){ return procedureHint2.indexOf(kw) !== -1; })) {
+                                targetL3_2 = isLeft2 ? rr.l3l : rr.l3r;
+                                break;
+                            }
+                        }
+
+                        if (targetL3_2) {
+                            var norm2 = targetL3_2.toLowerCase().replace(/[ \-–()]/g, '');
+                            var best2 = 0;
+                            for (var ti2 = 0; ti2 < tpaList2.length; ti2++) {
+                                var t2 = tpaList2[ti2];
+                                var tn2 = (t2.Name || t2.Level3 || '').toLowerCase().replace(/[ \-–()]/g, '');
+                                var sc2 = (tn2 === norm2) ? 100 : 0;
+                                if (!sc2) { targetL3_2.toLowerCase().split(' ').forEach(function(w){ if (w.length>2 && tn2.indexOf(w)!==-1) sc2+=10; }); }
+                                if (sc2 > best2) { best2 = sc2; procID2 = t2.ID; }
+                            }
+                            if (best2 < 30) procID2 = null;
+                        }
+                    } catch(e) { console.warn('[ClaimAI] TPA match error:', e); }
+
+                    if (procID2) {
+                        console.log('[ClaimAI] setIcdSlots: procID=' + procID2 + ' icd=' + lastIcdCode2 + ' eligible=' + eligibleAmt2);
+                        claimAI_saveCodingRow(procID2, lastIcdCode2, eligibleAmt2);
+                    } else {
+                        console.warn('[ClaimAI] setIcdSlots: no procedure match, hint=' + procedureHint2);
+                    }
                 }
             });
 
