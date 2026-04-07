@@ -1901,3 +1901,58 @@ export async function getBalanceSumInsured(
     return null;
   }
 }
+
+export async function getPreviousClaims(claimId: string, memberPolicyId?: string): Promise<{
+  claimId: string; slNo: number;
+  admissionDate: string | null; dischargeDate: string | null;
+  diagnosis: string | null; treatment: string | null;
+  billAmount: number | null; approvedAmount: number | null;
+  hospital: string | null; status: string | null;
+}[]> {
+  const db = await getPool();
+
+  // Look up memberPolicyId if not provided
+  let mpId = memberPolicyId ? parseInt(memberPolicyId) : 0;
+  if (!mpId) {
+    const lookup = await db.request()
+      .input("claimId", mssql.BigInt, parseInt(claimId))
+      .query("SELECT TOP 1 MemberPolicyID FROM Claimsdetails WHERE ClaimID=@claimId AND Deleted=0");
+    if (lookup.recordset.length > 0)
+      mpId = Number(lookup.recordset[0].MemberPolicyID);
+  }
+
+  if (!mpId) return [];
+
+  const result = await db.request()
+    .input("memberPolicyId", mssql.BigInt, mpId)
+    .input("claimId",        mssql.BigInt, parseInt(claimId))
+    .query(`
+      SELECT TOP 10
+        cd.ClaimID, cd.SlNo,
+        cd.DateOfAdmission, cd.DateOfDischarge,
+        cd.Diagnosis, cd.PlanOfTreatment,
+        cd.BillAmount, cd.SanctionedAmount,
+        ISNULL(p.ProviderName, '')  AS HospitalName,
+        ISNULL(cs.StageName,   '')  AS Status
+      FROM Claimsdetails cd
+      LEFT JOIN MasterData.Providers p   ON p.ProviderID = cd.ProviderID
+      LEFT JOIN MasterData.ClaimStage cs ON cs.StageID   = cd.StageID
+      WHERE cd.MemberPolicyID = @memberPolicyId
+        AND cd.ClaimID        != @claimId
+        AND cd.Deleted        = 0
+      ORDER BY cd.DateOfAdmission DESC
+    `);
+
+  return result.recordset.map((row: Record<string, unknown>) => ({
+    claimId:        String(row.ClaimID),
+    slNo:           Number(row.SlNo),
+    admissionDate:  row.DateOfAdmission ? new Date(row.DateOfAdmission as string).toLocaleDateString("en-IN") : null,
+    dischargeDate:  row.DateOfDischarge ? new Date(row.DateOfDischarge as string).toLocaleDateString("en-IN") : null,
+    diagnosis:      (row.Diagnosis       as string | null) ?? null,
+    treatment:      (row.PlanOfTreatment as string | null) ?? null,
+    billAmount:     row.BillAmount       != null ? Number(row.BillAmount)       : null,
+    approvedAmount: row.SanctionedAmount != null ? Number(row.SanctionedAmount) : null,
+    hospital:       (row.HospitalName    as string) || null,
+    status:         (row.Status          as string) || null,
+  }));
+}
