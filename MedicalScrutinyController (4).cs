@@ -7850,59 +7850,97 @@ namespace Enrollment.Controllers
                 // This handles any SP schema without needing to know exact columns upfront
 
                 // Start with columns from existing rows, or build minimal set
-                if (existingRows != null && existingRows.Rows.Count > 0)
-                {
-                    dt = existingRows.Copy();
-                    if (dt.Columns.Contains("TPAProcedureID") && tpaProcId > 0)
-                        dt.Rows[0]["TPAProcedureID"] = tpaProcId;
-                    if (dt.Columns.Contains("ICDCode") && icdId > 0)
-                        dt.Rows[0]["ICDCode"] = icdId;
-                }
-                else
-                {
-                    dt = new System.Data.DataTable();
-                    dt.Columns.Add("TPAProcedureID",     typeof(int));
-                    dt.Columns.Add("ICDCode",            typeof(int));
-                    dt.Columns.Add("SICategery",         typeof(int));
-                    dt.Columns.Add("isGipsa",            typeof(bool));
-                    dt.Columns.Add("isCI",               typeof(bool));
-                    dt.Columns.Add("isPED",              typeof(bool));
-                    dt.Columns.Add("isDayCare",          typeof(bool));
-                    dt.Columns.Add("BillAmount",         typeof(decimal));
-                    dt.Columns.Add("EligibleBillAmount", typeof(decimal));
-                    dt.Columns.Add("PayableAmount",      typeof(decimal));
-                    dt.Columns.Add("DisallowedAmount",   typeof(decimal));
-                    dt.Columns.Add("Discount",           typeof(decimal));
-                    dt.Columns.Add("BufferAmount",       typeof(decimal));
-                    dt.Columns.Add("AdditionalAmount",   typeof(decimal));
-                    var row = dt.NewRow();
-                    row["TPAProcedureID"]     = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
-                    row["ICDCode"]            = icdId > 0     ? (object)icdId      : DBNull.Value;
-                    row["SICategery"]         = 69;
-                    row["isGipsa"]            = false;
-                    row["isCI"]               = false;
-                    row["isPED"]              = false;
-                    row["isDayCare"]          = false;
-                    row["BillAmount"]         = 0m;
-                    row["EligibleBillAmount"] = 0m;
-                    row["PayableAmount"]      = 0m;
-                    row["DisallowedAmount"]   = 0m;
-                    row["Discount"]           = 0m;
-                    row["BufferAmount"]       = 0m;
-                    row["AdditionalAmount"]   = 0m;
-                    dt.Rows.Add(row);
-                }
+                // Build DataTable with EXACT schema from hdnClaimsCodingDetails
+                // (captured from browser: TPAProcedureID, TPALevel1, TPALevel2, TPALevel3,
+                //  PackageRate, PackageRatio, TreatementTypeID_19, isGipsa, isDayCare, isCI,
+                //  isPED, TypeOfAnesthesiaID, Exclusions, SurgeryDate, BillAmount,
+                //  DisallowedAmount, DisallowedReasonIDs, PayableAmount, BufferAmount,
+                //  AdditionalreasonIDs, Discount, Copay, Remarks, ICDCode, ICDName,
+                //  DiseaseCode, PCSCode, PCSDescription, EligibleAmount, AdditionalAmount,
+                //  BPCoverageLimit, ProcessHTML, Overridepackage, Overridesuminsured,
+                //  PolicySublimit, AlimentExpression, Alimentpower, PackageType)
+                dt = new System.Data.DataTable();
+                dt.Columns.Add("TPAProcedureID",       typeof(object));
+                dt.Columns.Add("TPALevel1",            typeof(object));
+                dt.Columns.Add("TPALevel2",            typeof(object));
+                dt.Columns.Add("TPALevel3",            typeof(object));
+                dt.Columns.Add("PackageRate",          typeof(object));
+                dt.Columns.Add("PackageRatio",         typeof(object));
+                dt.Columns.Add("TreatementTypeID_19",  typeof(object));
+                dt.Columns.Add("isGipsa",              typeof(object));
+                dt.Columns.Add("isDayCare",            typeof(object));
+                dt.Columns.Add("isCI",                 typeof(object));
+                dt.Columns.Add("isPED",                typeof(object));
+                dt.Columns.Add("TypeOfAnesthesiaID",   typeof(object));
+                dt.Columns.Add("Exclusions",           typeof(object));
+                dt.Columns.Add("SurgeryDate",          typeof(object));
+                dt.Columns.Add("BillAmount",           typeof(object));
+                dt.Columns.Add("DisallowedAmount",     typeof(object));
+                dt.Columns.Add("DisallowedReasonIDs",  typeof(object));
+                dt.Columns.Add("PayableAmount",        typeof(object));
+                dt.Columns.Add("BufferAmount",         typeof(object));
+                dt.Columns.Add("AdditionalreasonIDs",  typeof(object));
+                dt.Columns.Add("Discount",             typeof(object));
+                dt.Columns.Add("Copay",                typeof(object));
+                dt.Columns.Add("Remarks",              typeof(object));
+                dt.Columns.Add("ICDCode",              typeof(object));
+                dt.Columns.Add("ICDName",              typeof(object));
+                dt.Columns.Add("DiseaseCode",          typeof(object));
+                dt.Columns.Add("PCSCode",              typeof(object));
+                dt.Columns.Add("PCSDescription",       typeof(object));
+                dt.Columns.Add("EligibleAmount",       typeof(object));
+                dt.Columns.Add("AdditionalAmount",     typeof(object));
+                dt.Columns.Add("BPCoverageLimit",      typeof(object));
+                dt.Columns.Add("ProcessHTML",          typeof(object));
+                dt.Columns.Add("Overridepackage",      typeof(object));
+                dt.Columns.Add("Overridesuminsured",   typeof(object));
+                dt.Columns.Add("PolicySublimit",       typeof(object));
+                dt.Columns.Add("AlimentExpression",    typeof(object));
+                dt.Columns.Add("Alimentpower",         typeof(object));
+                dt.Columns.Add("PackageType",          typeof(object));
 
-                // Always remove known display-only columns
-                foreach (var bad in new[] { "ICDName", "DiseaseCode", "ICDLevel1", "ICDLevel2",
-                    "ICDLevel3", "ICDLevel4", "ICDLevel5", "ICDLevel6", "ICDLevel7",
-                    "TPALevel1", "TPALevel2", "TPALevel3", "PackageType", "PackageTypeName",
-                    "CategoryName", "Category", "SpecialityType", "SpecialityTypeName",
-                    "Level1Name", "Level2Name", "Level3Name", "isAutoClaimAI" })
-                    if (dt.Columns.Contains(bad)) dt.Columns.Remove(bad);
+                var newRow = dt.NewRow();
+                newRow["TPAProcedureID"]      = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
+                newRow["TPALevel1"]           = DBNull.Value;
+                newRow["TPALevel2"]           = DBNull.Value;
+                newRow["TPALevel3"]           = DBNull.Value;
+                newRow["PackageRate"]         = DBNull.Value;
+                newRow["PackageRatio"]        = DBNull.Value;
+                newRow["TreatementTypeID_19"] = DBNull.Value;
+                newRow["isGipsa"]             = false;
+                newRow["isDayCare"]           = false;
+                newRow["isCI"]               = false;
+                newRow["isPED"]              = false;
+                newRow["TypeOfAnesthesiaID"]  = DBNull.Value;
+                newRow["Exclusions"]          = DBNull.Value;
+                newRow["SurgeryDate"]         = DBNull.Value;
+                newRow["BillAmount"]          = 0;
+                newRow["DisallowedAmount"]    = 0;
+                newRow["DisallowedReasonIDs"] = DBNull.Value;
+                newRow["PayableAmount"]       = 0;
+                newRow["BufferAmount"]        = 0;
+                newRow["AdditionalreasonIDs"] = DBNull.Value;
+                newRow["Discount"]            = 0;
+                newRow["Copay"]              = 0;
+                newRow["Remarks"]            = DBNull.Value;
+                newRow["ICDCode"]            = icdId > 0 ? (object)icdId : DBNull.Value;
+                newRow["ICDName"]            = !string.IsNullOrEmpty(icdName) ? (object)icdName : DBNull.Value;
+                newRow["DiseaseCode"]        = !string.IsNullOrEmpty(diseaseCode) ? (object)diseaseCode : DBNull.Value;
+                newRow["PCSCode"]            = DBNull.Value;
+                newRow["PCSDescription"]     = DBNull.Value;
+                newRow["EligibleAmount"]     = 0;
+                newRow["AdditionalAmount"]   = 0;
+                newRow["BPCoverageLimit"]    = DBNull.Value;
+                newRow["ProcessHTML"]        = DBNull.Value;
+                newRow["Overridepackage"]    = false;
+                newRow["Overridesuminsured"] = false;
+                newRow["PolicySublimit"]     = false;
+                newRow["AlimentExpression"]  = DBNull.Value;
+                newRow["Alimentpower"]       = DBNull.Value;
+                newRow["PackageType"]        = DBNull.Value;
+                dt.Rows.Add(newRow);
 
-                // Serialize our DataTable to JSON and call the exact same
-                // standalone Save_CodingDetails action used when user saves manually
+                // Call the same standalone Save_CodingDetails used when user saves manually
                 string codingJson = Newtonsoft.Json.JsonConvert.SerializeObject(dt);
                 string saveResult = Save_CodingDetails(codingJson, claimId, slNo, (billType > 0 ? billType.ToString() : "0"));
                 bool isSuccess = saveResult != null &&
