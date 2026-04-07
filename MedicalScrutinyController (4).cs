@@ -7880,48 +7880,62 @@ namespace Enrollment.Controllers
                     {
                         conn.Open();
 
-                        // Step 1: Get all values from mTPAProcedurecs for this procedure
+                        // Step 1: Get all values from MasterData.TPAProcedures
+                        // Real columns: ICDCode(str), PCSCode(str), InvestigationID(int numeric PCS ID),
+                        // PPNDescription, Level(PackageType), TreatmentType_P19, isGIPSA, isDayCare, isCI, isPED, Diagnosis
+                        string procIcdCodeStr = null;
+                        string procPcsCodeStr = null;
+
                         if (tpaProcId > 0)
                         {
                             var cmdProc = new System.Data.SqlClient.SqlCommand(
                                 @"SELECT TOP 1
-                                    ISNULL(ICDCode,  0)             AS ICDCode,
-                                    ISNULL(ICDCode1, 0)             AS ICDCode1,
-                                    ISNULL(PCSCode,  0)             AS PCSCode,
-                                    ISNULL(PCSCode1, 0)             AS PCSCode1,
+                                    ISNULL(ICDCode, '')             AS ICDCodeStr,
+                                    ISNULL(PCSCode, '')             AS PCSCodeStr,
                                     ISNULL(PPNDescription, '')      AS PCSDescription,
-                                    ISNULL(Level4,   0)             AS PackageType,
-                                    ISNULL(TreatmentType_P19,  0)   AS TreatTypeID,
-                                    ISNULL(isGIPSA,  0)             AS isGipsa,
-                                    ISNULL(isDayCare,0)             AS isDayCare,
-                                    ISNULL(isCI,     0)             AS isCI,
-                                    ISNULL(isPED,    0)             AS isPED
-                                  FROM MasterData.mTPAProcedurecs
+                                    ISNULL(InvestigationID, 0)      AS PCSNumericID,
+                                    ISNULL(Level, 0)                AS PackageType,
+                                    ISNULL(TreatmentType_P19, 0)    AS TreatTypeID,
+                                    ISNULL(isGIPSA, 0)              AS isGipsa,
+                                    ISNULL(isDayCare, 0)            AS isDayCare,
+                                    ISNULL(isCI, 0)                 AS isCI,
+                                    ISNULL(isPED, 0)                AS isPED,
+                                    ISNULL(Diagnosis, '')           AS Diagnosis
+                                  FROM MasterData.TPAProcedures
                                   WHERE ID = @id AND Deleted = 0", conn);
                             cmdProc.Parameters.AddWithValue("@id", tpaProcId);
                             using (var rdr = cmdProc.ExecuteReader())
                             {
                                 if (rdr.Read())
                                 {
-                                    procIcdCode    = Convert.ToInt32(rdr["ICDCode"]);
-                                    if (procIcdCode == 0) procIcdCode = Convert.ToInt32(rdr["ICDCode1"]);
-                                    procPcsCode    = Convert.ToInt32(rdr["PCSCode"]);
-                                    if (procPcsCode == 0) procPcsCode = Convert.ToInt32(rdr["PCSCode1"]);
-                                    procPcsDesc    = rdr["PCSDescription"].ToString();
-                                    procPackageType= Convert.ToInt32(rdr["PackageType"]);
-                                    procTreatTypeId= Convert.ToInt32(rdr["TreatTypeID"]);
-                                    procIsGipsa    = Convert.ToBoolean(rdr["isGipsa"]);
-                                    procIsDayCare  = Convert.ToBoolean(rdr["isDayCare"]);
-                                    procIsCI       = Convert.ToBoolean(rdr["isCI"]);
-                                    procIsPED      = Convert.ToBoolean(rdr["isPED"]);
+                                    procIcdCodeStr  = rdr["ICDCodeStr"].ToString().Trim();
+                                    procPcsCodeStr  = rdr["PCSCodeStr"].ToString().Trim();
+                                    procPcsDesc     = !string.IsNullOrEmpty(rdr["PCSDescription"].ToString().Trim())
+                                                      ? rdr["PCSDescription"].ToString().Trim()
+                                                      : rdr["PCSCodeStr"].ToString().Trim();
+                                    procPcsCode     = Convert.ToInt32(rdr["PCSNumericID"]);
+                                    procPackageType = Convert.ToInt32(rdr["PackageType"]);
+                                    procTreatTypeId = Convert.ToInt32(rdr["TreatTypeID"]);
+                                    procIsGipsa     = Convert.ToBoolean(rdr["isGipsa"]);
+                                    procIsDayCare   = Convert.ToBoolean(rdr["isDayCare"]);
+                                    procIsCI        = Convert.ToBoolean(rdr["isCI"]);
+                                    procIsPED       = Convert.ToBoolean(rdr["isPED"]);
+                                    // Use Diagnosis as fallback diseaseCode
+                                    if (string.IsNullOrEmpty(diseaseCode))
+                                        diseaseCode = rdr["Diagnosis"].ToString().Trim();
                                 }
                             }
                         }
 
-                        // Step 2: ICD lookup — use procedure ICDCode first, else DiseaseCode string
-                        if (procIcdCode == 0 && !string.IsNullOrEmpty(diseaseCode))
+                        // Step 2: ICD lookup — use procedure's ICDCode string first, then diseaseCode
+                        // ICDCode in TPAProcedures is a string like 'H25', look up numeric ID in ICD10 table
+                        string icdSearchCode = !string.IsNullOrEmpty(procIcdCodeStr) ? procIcdCodeStr
+                                             : !string.IsNullOrEmpty(diseaseCode)    ? diseaseCode
+                                             : null;
+
+                        if (procIcdCode == 0 && !string.IsNullOrEmpty(icdSearchCode))
                         {
-                            string code = diseaseCode.Trim();
+                            string code = icdSearchCode.Trim();
                             while (code.Length > 1 && procIcdCode == 0)
                             {
                                 var cmdIcd = new System.Data.SqlClient.SqlCommand(
@@ -7947,6 +7961,7 @@ namespace Enrollment.Controllers
                             }
                         }
                         icdId = procIcdCode;
+
 
                         // Step 3: Bill amount from Claimsdetails (package amount)
                         var cmdBill = new System.Data.SqlClient.SqlCommand(
