@@ -233,17 +233,6 @@ export function FinancialSummaryTab({
   const effectiveTariffAmount = editedTariffAmount !== null
     ? (parseFloat(editedTariffAmount) || 0)
     : effectiveTariffTotal;
-
-  // Recalculate approved amount on the fly from edited values
-  const editedApprovedAmount: number | null = (() => {
-    if (effectiveClaimedAmount === null && effectiveTariffAmount === null) return null;
-    const base = effectiveClaimedAmount !== null && effectiveTariffAmount !== null
-      ? Math.min(effectiveClaimedAmount, effectiveTariffAmount)
-      : (effectiveClaimedAmount ?? effectiveTariffAmount);
-    if (base === null) return null;
-    const withBenefit = benefitTotal !== null ? Math.min(base, benefitTotal) : base;
-    return bsiEffectiveBalance !== null ? Math.min(withBenefit, bsiEffectiveBalance) : withBenefit;
-  })();
   const tariffLensAmount = sumLensAmountFromTariff(tariffItems);
   const hospitalLensAmount = sumLensAmountFromHospital(hospitalBillBreakdown);
   const tariffWithoutLens =
@@ -289,6 +278,19 @@ export function FinancialSummaryTab({
     bsiData?.Suminsured?.[0] ?? null;
   const bsiEffectiveBalance: number | null =
     typeof bsiBaseSI?.EffectiveBalance === "number" ? bsiBaseSI.EffectiveBalance : null;
+
+  // Recalculate approved amount from edited values — placed here after bsiEffectiveBalance
+  const editedApprovedAmount: number | null = (() => {
+    const claimed = effectiveClaimedAmount ?? null;
+    const tariff  = effectiveTariffAmount  ?? null;
+    if (claimed === null && tariff === null) return null;
+    let base: number;
+    if (claimed !== null && tariff !== null) base = Math.min(claimed, tariff);
+    else base = (claimed ?? tariff) as number;
+    const withBenefit: number = benefitTotal !== null ? Math.min(base, benefitTotal) : base;
+    return bsiEffectiveBalance !== null ? Math.min(withBenefit, bsiEffectiveBalance) : withBenefit;
+  })();
+
   const bsiCappedPayable: number | null =
     totalAmountApproved !== null && bsiEffectiveBalance !== null
       ? Math.min(totalAmountApproved, bsiEffectiveBalance)
