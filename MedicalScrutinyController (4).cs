@@ -7771,13 +7771,20 @@ namespace Enrollment.Controllers
                                 cmd.Parameters.AddWithValue("@TreatmentTypeID", typeId);
                             }
                         }
-                        if (!string.IsNullOrWhiteSpace(approvedFacilityId))
+                        if (!string.IsNullOrWhiteSpace(approvedFacilityId) && approvedFacilityId.Trim() != "0")
                         {
-                            int facilityId;
-                            if (int.TryParse(approvedFacilityId.Trim(), out facilityId) && facilityId > 0)
+                            // Try int first, then long, then raw string
+                            int facilityIdInt;
+                            long facilityIdLong;
+                            if (int.TryParse(approvedFacilityId.Trim(), out facilityIdInt) && facilityIdInt > 0)
                             {
                                 setClauses.Add("ApprovedFacilityID = @ApprovedFacilityID");
-                                cmd.Parameters.AddWithValue("@ApprovedFacilityID", facilityId);
+                                cmd.Parameters.AddWithValue("@ApprovedFacilityID", facilityIdInt);
+                            }
+                            else if (long.TryParse(approvedFacilityId.Trim(), out facilityIdLong) && facilityIdLong > 0)
+                            {
+                                setClauses.Add("ApprovedFacilityID = @ApprovedFacilityID");
+                                cmd.Parameters.AddWithValue("@ApprovedFacilityID", facilityIdLong);
                             }
                         }
 
