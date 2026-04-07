@@ -645,6 +645,10 @@ export function ResultView({
     // Infer procedure levels (Level1/Level2/Level3) from diagnosis + lineOfTreatment
     const procedureHint = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
 
+    // Eligible amount from financial summary
+    const eligibleAmount = (displayAnalysis?.financialSummary as { totalApprovedAmount?: number } | null | undefined)
+        ?.totalApprovedAmount ?? 0;
+
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
       window.parent.postMessage(
         {
@@ -656,6 +660,7 @@ export function ResultView({
           hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
           icdSlots:             icdSlots,
           procedureHint:        procedureHint,
+          eligibleAmount:       eligibleAmount,
         },
         "*",
       );
