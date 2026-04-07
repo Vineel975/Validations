@@ -290,9 +290,12 @@ export function FinancialSummaryTab({
   const [prevClaimsExpanded, setPrevExpanded] = useState(false);
 
   useEffect(() => {
-    if (!memberPolicyId || !claimId) return;
+    if (!claimId) return;
     setPrevLoading(true);
-    fetch(`/api/previous-claims?memberPolicyId=${encodeURIComponent(memberPolicyId)}&claimId=${encodeURIComponent(claimId)}`)
+    // If memberPolicyId not in spectraFields (old job), API will look it up from claimId
+    const params = new URLSearchParams({ claimId });
+    if (memberPolicyId) params.set("memberPolicyId", memberPolicyId);
+    fetch(`/api/previous-claims?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => { setPrevClaims(data.claims ?? []); setPrevError(null); })
       .catch((e) => setPrevError(String(e)))
@@ -669,8 +672,8 @@ export function FinancialSummaryTab({
 
         </div>
 
-        {/* Previous Claims */}
-        {(memberPolicyId && claimId) && (
+        {/* Previous Claims — show whenever we have a claimId */}
+        {!!claimId && (
           <Card className="border-2 border-indigo-200 bg-indigo-50">
             <CardContent className="pt-4">
               <div
