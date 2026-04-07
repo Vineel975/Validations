@@ -587,7 +587,7 @@ export function ResultView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.claimId]);
 
-  const sendAccommodationToSpectra = () => {
+  const sendAccommodationToSpectra = async () => {
     if (!(window.parent && window.parent !== window)) {
       // Not running inside an iframe — nothing to do
       return;
