@@ -7846,61 +7846,73 @@ namespace Enrollment.Controllers
                 System.Data.DataTable dt;
                 string vMessage = string.Empty;
 
+                // Columns the Save SP accepts — everything else must be removed
+                // (discovered from error: PackageType, ICDName, DiseaseCode etc. are display-only)
+                var allowedColumns = new System.Collections.Generic.HashSet<string>(
+                    System.StringComparer.OrdinalIgnoreCase)
+                {
+                    "TPAProcedureID", "ICDCode", "SICategery",
+                    "isGipsa", "isCI", "isPED", "isDayCare",
+                    "BillAmount", "EligibleBillAmount", "PayableAmount",
+                    "DisallowedAmount", "DisallowedReason",
+                    "Discount", "BufferAmount", "AdditionalAmount", "AdditionalAmountReason",
+                    "Remarks", "PolicySublimit", "OverridePackage", "OverrideSumInsured",
+                    "PCSCode", "TypeOfAnesthesiaID", "ExcludedItems", "SurgeryDate",
+                    "PackageRate", "ReckonRate", "NMEAmount"
+                };
+
                 if (existingRows != null && existingRows.Rows.Count > 0)
                 {
-                    // Clone first row and update fields
-                    dt = existingRows.Clone(); // same schema, no data
-                    var newRow = dt.NewRow();
-                    foreach (System.Data.DataColumn col in existingRows.Columns)
-                        newRow[col.ColumnName] = existingRows.Rows[0][col.ColumnName];
+                    dt = existingRows.Copy();
 
                     // Override ICD and procedure fields
                     if (dt.Columns.Contains("TPAProcedureID") && tpaProcId > 0)
-                        newRow["TPAProcedureID"] = tpaProcId;
+                        dt.Rows[0]["TPAProcedureID"] = tpaProcId;
                     if (dt.Columns.Contains("ICDCode") && icdId > 0)
-                        newRow["ICDCode"] = icdId;
+                        dt.Rows[0]["ICDCode"] = icdId;
 
-                    dt.Rows.Add(newRow);
-
-                    // Remove display-only columns before saving
-                    if (dt.Columns.Contains("ICDName"))    dt.Columns.Remove("ICDName");
-                    if (dt.Columns.Contains("DiseaseCode")) dt.Columns.Remove("DiseaseCode");
+                    // Remove columns the SP doesn't accept
+                    var toRemove = new System.Collections.Generic.List<string>();
+                    foreach (System.Data.DataColumn col in dt.Columns)
+                        if (!allowedColumns.Contains(col.ColumnName))
+                            toRemove.Add(col.ColumnName);
+                    foreach (var colName in toRemove)
+                        dt.Columns.Remove(colName);
                 }
                 else
                 {
-                    // No existing rows — build minimal DataTable with only the fields the SP accepts
-                    // Use a fresh retrieve with a dummy approach: call Save with minimal required fields
+                    // No existing rows — build minimal DataTable with only SP-accepted columns
                     dt = new System.Data.DataTable();
-                    dt.Columns.Add("TPAProcedureID",   typeof(int));
-                    dt.Columns.Add("ICDCode",          typeof(int));
-                    dt.Columns.Add("SICategery",       typeof(int));
-                    dt.Columns.Add("isGipsa",          typeof(bool));
-                    dt.Columns.Add("isCI",             typeof(bool));
-                    dt.Columns.Add("isPED",            typeof(bool));
-                    dt.Columns.Add("isDayCare",        typeof(bool));
-                    dt.Columns.Add("BillAmount",       typeof(decimal));
+                    dt.Columns.Add("TPAProcedureID",     typeof(int));
+                    dt.Columns.Add("ICDCode",            typeof(int));
+                    dt.Columns.Add("SICategery",         typeof(int));
+                    dt.Columns.Add("isGipsa",            typeof(bool));
+                    dt.Columns.Add("isCI",               typeof(bool));
+                    dt.Columns.Add("isPED",              typeof(bool));
+                    dt.Columns.Add("isDayCare",          typeof(bool));
+                    dt.Columns.Add("BillAmount",         typeof(decimal));
                     dt.Columns.Add("EligibleBillAmount", typeof(decimal));
-                    dt.Columns.Add("PayableAmount",    typeof(decimal));
-                    dt.Columns.Add("DisallowedAmount", typeof(decimal));
-                    dt.Columns.Add("Discount",         typeof(decimal));
-                    dt.Columns.Add("BufferAmount",     typeof(decimal));
-                    dt.Columns.Add("AdditionalAmount", typeof(decimal));
+                    dt.Columns.Add("PayableAmount",      typeof(decimal));
+                    dt.Columns.Add("DisallowedAmount",   typeof(decimal));
+                    dt.Columns.Add("Discount",           typeof(decimal));
+                    dt.Columns.Add("BufferAmount",       typeof(decimal));
+                    dt.Columns.Add("AdditionalAmount",   typeof(decimal));
 
                     var row = dt.NewRow();
-                    row["TPAProcedureID"]    = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
-                    row["ICDCode"]           = icdId > 0    ? (object)icdId      : DBNull.Value;
-                    row["SICategery"]        = 69;
-                    row["isGipsa"]           = false;
-                    row["isCI"]              = false;
-                    row["isPED"]             = false;
-                    row["isDayCare"]         = false;
-                    row["BillAmount"]        = 0m;
-                    row["EligibleBillAmount"]= 0m;
-                    row["PayableAmount"]     = 0m;
-                    row["DisallowedAmount"]  = 0m;
-                    row["Discount"]          = 0m;
-                    row["BufferAmount"]      = 0m;
-                    row["AdditionalAmount"]  = 0m;
+                    row["TPAProcedureID"]     = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
+                    row["ICDCode"]            = icdId > 0     ? (object)icdId      : DBNull.Value;
+                    row["SICategery"]         = 69;
+                    row["isGipsa"]            = false;
+                    row["isCI"]               = false;
+                    row["isPED"]              = false;
+                    row["isDayCare"]          = false;
+                    row["BillAmount"]         = 0m;
+                    row["EligibleBillAmount"] = 0m;
+                    row["PayableAmount"]      = 0m;
+                    row["DisallowedAmount"]   = 0m;
+                    row["Discount"]           = 0m;
+                    row["BufferAmount"]       = 0m;
+                    row["AdditionalAmount"]   = 0m;
                     dt.Rows.Add(row);
                 }
 
@@ -7909,7 +7921,7 @@ namespace Enrollment.Controllers
                     Convert.ToInt32(Session[SessionValue.UserRegionID]),
                     out vMessage);
 
-                return Json(new { success = result > 0 || vMessage.Contains("Success"), message = vMessage });
+                return Json(new { success = result > 0 || (vMessage != null && vMessage.ToLower().Contains("success")), message = vMessage });
             }
             catch (Exception ex)
             {
