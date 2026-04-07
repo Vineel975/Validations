@@ -8651,7 +8651,27 @@
                                 }
                             }
                             if (claimAI_TPAProcID && bestScore >= 30) {
-                                console.log('[ClaimAI] TPA matched:', claimAI_TPAProcID, claimAI_Level3Text, 'score:', bestScore);
+                                // Also resolve numeric parent IDs for TPALevel1/2/3
+                                // Build ID map for fast lookup
+                                var tpaIDMap = {};
+                                for (var im = 0; im < tpaList.length; im++) {
+                                    tpaIDMap[tpaList[im].ID] = tpaList[im];
+                                }
+                                // Walk parent chain to get Level1ID, Level2ID
+                                var matchedTPA = tpaIDMap[claimAI_TPAProcID];
+                                var parentID  = matchedTPA ? (matchedTPA.ParentID || 0) : 0;
+                                var parentItem = parentID ? tpaIDMap[parentID] : null;
+                                var grandParentID = parentItem ? (parentItem.ParentID || 0) : 0;
+
+                                window._claimAI_TPALevel1ID = grandParentID || parentID || 0;
+                                window._claimAI_TPALevel2ID = parentID || 0;
+                                window._claimAI_TPALevel3ID = claimAI_TPAProcID;
+
+                                console.log('[ClaimAI] TPA matched:', claimAI_TPAProcID,
+                                    'L1ID:', window._claimAI_TPALevel1ID,
+                                    'L2ID:', window._claimAI_TPALevel2ID,
+                                    'L3ID:', window._claimAI_TPALevel3ID,
+                                    'score:', bestScore);
                             } else {
                                 claimAI_TPAProcID = null;
                                 console.warn('[ClaimAI] TPA no match for:', targetL3);
@@ -8695,11 +8715,28 @@
                     }
 
                     // ── Step 3: Build coding row and save via AJAX ───────────────────────
-                    if (claimAI_TPAProcID && claimAI_DiseaseCode) {
+                    // Get the most specific (last non-null) ICD code string from icdSlots
+                    var lastIcdCode = '';
+                    var lastIcdDesc = '';
+                    if (icdSlots && icdSlots.length > 0) {
+                        for (var si7 = icdSlots.length - 1; si7 >= 0; si7--) {
+                            if (icdSlots[si7] && icdSlots[si7].code) {
+                                lastIcdCode = icdSlots[si7].code;
+                                lastIcdDesc = icdSlots[si7].description || '';
+                                break;
+                            }
+                        }
+                    }
+
+                    if (claimAI_TPAProcID) {
                         setTimeout(function() {
-                            claimAI_saveCodingRow(claimAI_TPAProcID, claimAI_Level1Text, claimAI_Level2Text,
-                                claimAI_Level3Text, claimAI_ICDCodeID, claimAI_ICDName, claimAI_DiseaseCode);
+                            claimAI_saveCodingRow(
+                                claimAI_TPAProcID,
+                                lastIcdCode,
+                                eligibleAmount
+                            );
                         }, 800);
+                    } else {
                     } else {
                         console.warn('[ClaimAI] Coding: TPAProcID=' + claimAI_TPAProcID + ' DiseaseCode=' + claimAI_DiseaseCode + ' — not saving coding');
                     }
@@ -8865,12 +8902,12 @@
             $(document).ready(function () {
 
                 // ── ClaimAI: Save Coding Row function ──────────────────────────────────
-                window.claimAI_saveCodingRow = function(tpaProcID, level1, level2, level3, icdCodeID, icdName, diseaseCode) {
+                window.claimAI_saveCodingRow = function(tpaProcID, lastIcdCodeStr, eligibleAmt) {
                     var claimID     = $('#hdnClaimID').val();
                     var slNo        = $('#hdnClaimSlNo').val();
-                    var billingType = $('#hdnBillingType').val() || '0';
+                    var packageAmt  = parseFloat($('#txtTotalServicesPackageAmount').val()
+                                        || $('#txtbillingtotalpackageamount').val() || 0) || 0;
 
-                    // Call dedicated server-side action that builds DataTable with correct schema
                     $.ajax({
                         url: '@Url.Action("SaveCodingRowForClaimAI", "MedicalScrutiny")',
                         type: 'POST',
@@ -8878,10 +8915,9 @@
                             claimId:        claimID,
                             slNo:           slNo,
                             tpaProcedureId: tpaProcID,
-                            icdCodeId:      icdCodeID || 0,
-                            icdName:        icdName   || '',
-                            diseaseCode:    diseaseCode || '',
-                            billingType:    billingType
+                            icdCodeStr:     lastIcdCodeStr  || '',
+                            eligibleAmount: eligibleAmt     || 0,
+                            packageAmount:  packageAmt      || 0
                         },
                         success: function(res) {
                             console.log('[ClaimAI] Coding saved:', res);
@@ -8899,11 +8935,11 @@
                                     .appendTo('body');
                                 setTimeout(function() { $toast.fadeOut(400, function(){ $toast.remove(); }); }, 3000);
                             } else {
-                                console.warn('[ClaimAI] Coding save returned failure:', res);
+                                console.warn('[ClaimAI] Coding save failed:', res && res.message);
                             }
                         },
                         error: function(xhr) {
-                            console.warn('[ClaimAI] Coding save failed:', xhr.responseText);
+                            console.warn('[ClaimAI] Coding save error:', xhr.responseText);
                         }
                     });
                 };
