@@ -7904,11 +7904,7 @@ namespace Enrollment.Controllers
                         }
                     }
 
-                    // 3. SICategory for Primary
-                    var cmdCat = new System.Data.SqlClient.SqlCommand(
-                        "SELECT TOP 1 ID FROM SumInsuredCategory WHERE Name LIKE '%Primary%' AND Deleted=0", conn);
-                    var catSc = cmdCat.ExecuteScalar();
-                    if (catSc != null && catSc != DBNull.Value) siCategory = Convert.ToInt32(catSc);
+                    // 3. SICategory — 69 = Primary (hardcoded, no SumInsuredCategory table in DB)
                 }
 
                 // 4. Build exact 35-column DataTable
