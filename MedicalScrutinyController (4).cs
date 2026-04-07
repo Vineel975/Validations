@@ -7664,7 +7664,6 @@ namespace Enrollment.Controllers
         /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
         /// GET /MedicalScrutiny/GetMedicalBillDocument
         /// </summary>
-        [HttpGet]
         /// <summary>
         /// Returns patient/claim field values needed by ClaimAI for validation.
         /// Called synchronously from JS before submitting to Convex, so it must be fast.
@@ -7945,6 +7944,7 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("PolicySublimit",      typeof(decimal));
                 dt.Columns.Add("AlimentExpression",   typeof(int));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
+                dt.Columns.Add("PackageType",         typeof(int));   // VM needs this; strips before SP call
 
                 var row = dt.NewRow();
                 row["TPAProcedureID"]      = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
@@ -7982,6 +7982,7 @@ namespace Enrollment.Controllers
                 row["PolicySublimit"]     = DBNull.Value;
                 row["AlimentExpression"]  = DBNull.Value;
                 row["Alimentpower"]       = DBNull.Value;
+                row["PackageType"]        = pkgType > 0 ? (object)pkgType : DBNull.Value;
                 dt.Rows.Add(row);
 
                 // 5. Save
