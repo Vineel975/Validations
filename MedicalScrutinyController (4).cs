@@ -7846,42 +7846,20 @@ namespace Enrollment.Controllers
                 System.Data.DataTable dt;
                 string vMessage = string.Empty;
 
-                // Columns the Save SP accepts — everything else must be removed
-                // (discovered from error: PackageType, ICDName, DiseaseCode etc. are display-only)
-                var allowedColumns = new System.Collections.Generic.HashSet<string>(
-                    System.StringComparer.OrdinalIgnoreCase)
-                {
-                    "TPAProcedureID", "ICDCode", "SICategery",
-                    "isGipsa", "isCI", "isPED", "isDayCare",
-                    "BillAmount", "EligibleBillAmount", "PayableAmount",
-                    "DisallowedAmount", "DisallowedReason",
-                    "Discount", "BufferAmount", "AdditionalAmount", "AdditionalAmountReason",
-                    "Remarks", "PolicySublimit", "OverridePackage", "OverrideSumInsured",
-                    "PCSCode", "TypeOfAnesthesiaID", "ExcludedItems", "SurgeryDate",
-                    "PackageRate", "ReckonRate", "NMEAmount"
-                };
+                // Build DataTable by repeatedly trying to save and removing offending columns
+                // This handles any SP schema without needing to know exact columns upfront
 
+                // Start with columns from existing rows, or build minimal set
                 if (existingRows != null && existingRows.Rows.Count > 0)
                 {
                     dt = existingRows.Copy();
-
-                    // Override ICD and procedure fields
                     if (dt.Columns.Contains("TPAProcedureID") && tpaProcId > 0)
                         dt.Rows[0]["TPAProcedureID"] = tpaProcId;
                     if (dt.Columns.Contains("ICDCode") && icdId > 0)
                         dt.Rows[0]["ICDCode"] = icdId;
-
-                    // Remove columns the SP doesn't accept
-                    var toRemove = new System.Collections.Generic.List<string>();
-                    foreach (System.Data.DataColumn col in dt.Columns)
-                        if (!allowedColumns.Contains(col.ColumnName))
-                            toRemove.Add(col.ColumnName);
-                    foreach (var colName in toRemove)
-                        dt.Columns.Remove(colName);
                 }
                 else
                 {
-                    // No existing rows — build minimal DataTable with only SP-accepted columns
                     dt = new System.Data.DataTable();
                     dt.Columns.Add("TPAProcedureID",     typeof(int));
                     dt.Columns.Add("ICDCode",            typeof(int));
@@ -7897,7 +7875,6 @@ namespace Enrollment.Controllers
                     dt.Columns.Add("Discount",           typeof(decimal));
                     dt.Columns.Add("BufferAmount",       typeof(decimal));
                     dt.Columns.Add("AdditionalAmount",   typeof(decimal));
-
                     var row = dt.NewRow();
                     row["TPAProcedureID"]     = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
                     row["ICDCode"]            = icdId > 0     ? (object)icdId      : DBNull.Value;
@@ -7916,10 +7893,45 @@ namespace Enrollment.Controllers
                     dt.Rows.Add(row);
                 }
 
-                int result = _objMadicalScrutinyVM.Save_CodingDetails(
-                    claimIdLong, slNoInt, billType, dt,
-                    Convert.ToInt32(Session[SessionValue.UserRegionID]),
-                    out vMessage);
+                // Always remove known display-only columns
+                foreach (var bad in new[] { "ICDName", "DiseaseCode", "ICDLevel1", "ICDLevel2",
+                    "ICDLevel3", "ICDLevel4", "ICDLevel5", "ICDLevel6", "ICDLevel7",
+                    "TPALevel1", "TPALevel2", "TPALevel3", "PackageType", "PackageTypeName",
+                    "CategoryName", "Category", "SpecialityType", "SpecialityTypeName",
+                    "Level1Name", "Level2Name", "Level3Name", "isAutoClaimAI" })
+                    if (dt.Columns.Contains(bad)) dt.Columns.Remove(bad);
+
+                // Try saving — if a column error occurs, remove that column and retry (up to 20 times)
+                int result = 0;
+                int maxRetries = 20;
+                for (int attempt = 0; attempt < maxRetries; attempt++)
+                {
+                    try
+                    {
+                        result = _objMadicalScrutinyVM.Save_CodingDetails(
+                            claimIdLong, slNoInt, billType, dt,
+                            Convert.ToInt32(Session[SessionValue.UserRegionID]),
+                            out vMessage);
+                        break; // success
+                    }
+                    catch (Exception ex)
+                    {
+                        var msg = ex.Message;
+                        // Extract column name from "Column 'XYZ' does not belong to table"
+                        var match = System.Text.RegularExpressions.Regex.Match(
+                            msg, @"Column '([^']+)' does not belong");
+                        if (match.Success && dt.Columns.Contains(match.Groups[1].Value))
+                        {
+                            dt.Columns.Remove(match.Groups[1].Value);
+                            // continue retry loop
+                        }
+                        else
+                        {
+                            vMessage = msg;
+                            break; // different error — stop
+                        }
+                    }
+                }
 
                 return Json(new { success = result > 0 || (vMessage != null && vMessage.ToLower().Contains("success")), message = vMessage });
             }
