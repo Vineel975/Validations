@@ -8797,10 +8797,14 @@
                         success: function(res) {
                             console.log('[ClaimAI] Coding saved:', res);
                             if (res && res.success) {
-                                if (typeof Retrieve_ClaimsCodingDetails === 'function') {
-                                    var reqTypeID = basicData && basicData[0] ? basicData[0].RequestTypeID : 0;
-                                    Retrieve_ClaimsCodingDetails(claimID, slNo, reqTypeID);
-                                }
+                                // Delay to allow DB commit before refreshing table
+                                // so Edit/Delete buttons render correctly on first load
+                                setTimeout(function() {
+                                    if (typeof Retrieve_ClaimsCodingDetails === 'function') {
+                                        var reqTypeID = basicData && basicData[0] ? basicData[0].RequestTypeID : 0;
+                                        Retrieve_ClaimsCodingDetails(claimID, slNo, reqTypeID);
+                                    }
+                                }, 1500);
                                 var $toast = $('<div/>')
                                     .text('✓ Coding details saved')
                                     .css({ position:'fixed', bottom:'50px', right:'20px',
