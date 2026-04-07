@@ -1,3 +1,10 @@
+message
+: 
+"Error While Inserting Data into Staging TableTrying to pass a table-valued parameter with 37 column(s) where the corresponding user-defined table type requires 35 column(s)."
+success
+: 
+false
+
 [ClaimAI] hdnClaimsCodingDetails keys: TPAProcedureID, TPALevel1, TPALevel2, TPALevel3, PackageRate, PackageRatio, TreatementTypeID_19, isGipsa, isDayCare, isCI, isPED, TypeOfAnesthesiaID, Exclusions, SurgeryDate, BillAmount, DisallowedAmount, DisallowedReasonIDs, PayableAmount, BufferAmount, AdditionalreasonIDs, Discount, Copay, Remarks, ICDCode, ICDName, DiseaseCode, PCSCode, PCSDescription, EligibleAmount, AdditionalAmount, BPCoverageLimit, ProcessHTML, Overridepackage, Overridesuminsured, PolicySublimit, AlimentExpression, Alimentpower, PackageType
 
 
