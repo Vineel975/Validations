@@ -7860,42 +7860,43 @@ namespace Enrollment.Controllers
                 //  BPCoverageLimit, ProcessHTML, Overridepackage, Overridesuminsured,
                 //  PolicySublimit, AlimentExpression, Alimentpower, PackageType)
                 dt = new System.Data.DataTable();
-                dt.Columns.Add("TPAProcedureID",       typeof(object));
-                dt.Columns.Add("TPALevel1",            typeof(object));
-                dt.Columns.Add("TPALevel2",            typeof(object));
-                dt.Columns.Add("TPALevel3",            typeof(object));
-                dt.Columns.Add("PackageRate",          typeof(object));
-                dt.Columns.Add("PackageRatio",         typeof(object));
-                dt.Columns.Add("TreatementTypeID_19",  typeof(object));
-                dt.Columns.Add("isGipsa",              typeof(object));
-                dt.Columns.Add("isDayCare",            typeof(object));
-                dt.Columns.Add("isCI",                 typeof(object));
-                dt.Columns.Add("isPED",                typeof(object));
-                dt.Columns.Add("TypeOfAnesthesiaID",   typeof(object));
-                dt.Columns.Add("Exclusions",           typeof(object));
-                dt.Columns.Add("SurgeryDate",          typeof(object));
-                dt.Columns.Add("BillAmount",           typeof(object));
-                dt.Columns.Add("DisallowedAmount",     typeof(object));
-                dt.Columns.Add("DisallowedReasonIDs",  typeof(object));
-                dt.Columns.Add("PayableAmount",        typeof(object));
-                dt.Columns.Add("BufferAmount",         typeof(object));
-                dt.Columns.Add("AdditionalreasonIDs",  typeof(object));
-                dt.Columns.Add("Discount",             typeof(object));
-                dt.Columns.Add("Copay",                typeof(object));
-                dt.Columns.Add("Remarks",              typeof(object));
-                dt.Columns.Add("ICDCode",              typeof(object));
-                dt.Columns.Add("PCSCode",              typeof(object));
-                dt.Columns.Add("PCSDescription",       typeof(object));
-                dt.Columns.Add("EligibleAmount",       typeof(object));
-                dt.Columns.Add("AdditionalAmount",     typeof(object));
-                dt.Columns.Add("BPCoverageLimit",      typeof(object));
-                dt.Columns.Add("ProcessHTML",          typeof(object));
-                dt.Columns.Add("Overridepackage",      typeof(object));
-                dt.Columns.Add("Overridesuminsured",   typeof(object));
-                dt.Columns.Add("PolicySublimit",       typeof(object));
-                dt.Columns.Add("AlimentExpression",    typeof(object));
-                dt.Columns.Add("Alimentpower",         typeof(object));
-                dt.Columns.Add("PackageType",          typeof(object));
+                // Exact 35-column schema (display-only cols removed: ICDName, DiseaseCode,
+                // PCSDescription, TPALevel1, TPALevel2, TPALevel3, ProcessHTML)
+                dt.Columns.Add("TPAProcedureID",      typeof(int));
+                dt.Columns.Add("TPALevel1",           typeof(string));
+                dt.Columns.Add("TPALevel2",           typeof(string));
+                dt.Columns.Add("TPALevel3",           typeof(string));
+                dt.Columns.Add("PackageRate",         typeof(decimal));
+                dt.Columns.Add("PackageRatio",        typeof(decimal));
+                dt.Columns.Add("TreatementTypeID_19", typeof(int));
+                dt.Columns.Add("isGipsa",             typeof(bool));
+                dt.Columns.Add("isDayCare",           typeof(bool));
+                dt.Columns.Add("isCI",                typeof(bool));
+                dt.Columns.Add("isPED",               typeof(bool));
+                dt.Columns.Add("TypeOfAnesthesiaID",  typeof(int));
+                dt.Columns.Add("Exclusions",          typeof(string));
+                dt.Columns.Add("SurgeryDate",         typeof(string));
+                dt.Columns.Add("BillAmount",          typeof(decimal));
+                dt.Columns.Add("DisallowedAmount",    typeof(decimal));
+                dt.Columns.Add("DisallowedReasonIDs", typeof(string));
+                dt.Columns.Add("PayableAmount",       typeof(decimal));
+                dt.Columns.Add("BufferAmount",        typeof(decimal));
+                dt.Columns.Add("AdditionalreasonIDs", typeof(string));
+                dt.Columns.Add("Discount",            typeof(decimal));
+                dt.Columns.Add("Copay",               typeof(decimal));
+                dt.Columns.Add("Remarks",             typeof(string));
+                dt.Columns.Add("ICDCode",             typeof(int));
+                dt.Columns.Add("PCSCode",             typeof(int));
+                dt.Columns.Add("PCSDescription",      typeof(string));
+                dt.Columns.Add("EligibleAmount",      typeof(decimal));
+                dt.Columns.Add("AdditionalAmount",    typeof(decimal));
+                dt.Columns.Add("BPCoverageLimit",     typeof(decimal));
+                dt.Columns.Add("Overridepackage",     typeof(bool));
+                dt.Columns.Add("Overridesuminsured",  typeof(bool));
+                dt.Columns.Add("PolicySublimit",      typeof(bool));
+                dt.Columns.Add("AlimentExpression",   typeof(string));
+                dt.Columns.Add("Alimentpower",        typeof(decimal));
+                dt.Columns.Add("PackageType",         typeof(int));
 
                 var newRow = dt.NewRow();
                 newRow["TPAProcedureID"]      = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
@@ -7912,22 +7913,21 @@ namespace Enrollment.Controllers
                 newRow["TypeOfAnesthesiaID"]  = DBNull.Value;
                 newRow["Exclusions"]          = DBNull.Value;
                 newRow["SurgeryDate"]         = DBNull.Value;
-                newRow["BillAmount"]          = 0;
-                newRow["DisallowedAmount"]    = 0;
+                newRow["BillAmount"]          = 0m;
+                newRow["DisallowedAmount"]    = 0m;
                 newRow["DisallowedReasonIDs"] = DBNull.Value;
-                newRow["PayableAmount"]       = 0;
-                newRow["BufferAmount"]        = 0;
+                newRow["PayableAmount"]       = 0m;
+                newRow["BufferAmount"]        = 0m;
                 newRow["AdditionalreasonIDs"] = DBNull.Value;
-                newRow["Discount"]            = 0;
-                newRow["Copay"]              = 0;
+                newRow["Discount"]            = 0m;
+                newRow["Copay"]              = 0m;
                 newRow["Remarks"]            = DBNull.Value;
                 newRow["ICDCode"]            = icdId > 0 ? (object)icdId : DBNull.Value;
                 newRow["PCSCode"]            = DBNull.Value;
                 newRow["PCSDescription"]     = DBNull.Value;
-                newRow["EligibleAmount"]     = 0;
-                newRow["AdditionalAmount"]   = 0;
+                newRow["EligibleAmount"]     = 0m;
+                newRow["AdditionalAmount"]   = 0m;
                 newRow["BPCoverageLimit"]    = DBNull.Value;
-                newRow["ProcessHTML"]        = DBNull.Value;
                 newRow["Overridepackage"]    = false;
                 newRow["Overridesuminsured"] = false;
                 newRow["PolicySublimit"]     = false;
@@ -7935,18 +7935,6 @@ namespace Enrollment.Controllers
                 newRow["Alimentpower"]       = DBNull.Value;
                 newRow["PackageType"]        = DBNull.Value;
                 dt.Rows.Add(newRow);
-
-                // Remove display-only columns — same as main POST handler does
-                // SP expects exactly 35 columns
-                // Full schema = 36, remove ICDName+DiseaseCode = 34... 
-                // TPALevel1/2/3 and PCSDescription are also display-only
-                foreach (var col in new[] { "ICDName", "DiseaseCode", "PCSDescription",
-                                            "TPALevel1", "TPALevel2", "TPALevel3",
-                                            "ProcessHTML" })
-                    if (dt.Columns.Contains(col)) dt.Columns.Remove(col);
-
-                // Log column count for debugging
-                vMessage = "COL_COUNT:" + dt.Columns.Count;
 
                 // Call VM directly
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
