@@ -8619,26 +8619,42 @@
                         }
 
                         if (targetL3) {
-                            // Find matching row in mTPAProcedurecs — check all possible field names
-                            var l3Norm = targetL3.toLowerCase();
-                            console.log('[ClaimAI] TPA sample item:', JSON.stringify(tpaList[0]));
+                            // Name field confirmed as procedure name field in mTPAProcedurecs
+                            // Also Level3 field has the name. Match by Name field with fuzzy matching.
+                            var l3Norm = targetL3.toLowerCase().replace(/[\s\-–()]/g, '');
+                            var bestScore = 0;
                             for (var ti = 0; ti < tpaList.length; ti++) {
                                 var tpa = tpaList[ti];
-                                // Try every possible field name for Level3
-                                var tl3 = (tpa.Level3 || tpa.level3 || tpa.TPALevel3 ||
-                                           tpa.Name   || tpa.name   || tpa.Description ||
-                                           tpa.ProcedureName || '').toString().toLowerCase();
-                                if (tl3 && (tl3 === l3Norm || tl3.indexOf(l3Norm) !== -1 || l3Norm.indexOf(tl3) !== -1)) {
-                                    claimAI_TPAProcID  = tpa.ID   || tpa.Id   || tpa.id   || null;
-                                    claimAI_Level1Text = tpa.Level1 || tpa.level1 || 'Ophthalmology';
-                                    claimAI_Level2Text = tpa.Level2 || tpa.level2 || targetL2;
-                                    claimAI_Level3Text = tpa.Level3 || tpa.level3 || targetL3;
-                                    console.log('[ClaimAI] TPA matched:', claimAI_TPAProcID, tl3);
-                                    break;
+                                // Use Name field (confirmed) and Level3 as fallback
+                                var tpaName = (tpa.Name || tpa.Level3 || '').toString().toLowerCase();
+                                var tpaNameNorm = tpaName.replace(/[\s\-–()]/g, '');
+                                var score = 0;
+                                if (tpaNameNorm === l3Norm) {
+                                    score = 100; // exact
+                                } else if (tpaNameNorm.indexOf(l3Norm) !== -1 || l3Norm.indexOf(tpaNameNorm) !== -1) {
+                                    score = 80;
+                                } else {
+                                    // Word overlap score
+                                    var words = l3Norm.split('');
+                                    var matched = 0;
+                                    targetL3.toLowerCase().split(/\s+/).forEach(function(w) {
+                                        if (w.length > 2 && tpaName.indexOf(w) !== -1) matched++;
+                                    });
+                                    score = matched * 10;
+                                }
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    claimAI_TPAProcID  = tpa.ID;
+                                    claimAI_Level1Text = tpa.Level1 || '';
+                                    claimAI_Level2Text = tpa.Level2 || '';
+                                    claimAI_Level3Text = tpa.Name   || tpa.Level3 || '';
                                 }
                             }
-                            if (!claimAI_TPAProcID) {
-                                console.warn('[ClaimAI] No L3 match for:', targetL3, '— sample keys:', tpaList.length > 0 ? Object.keys(tpaList[0]).join(',') : 'empty');
+                            if (claimAI_TPAProcID && bestScore >= 30) {
+                                console.log('[ClaimAI] TPA matched:', claimAI_TPAProcID, claimAI_Level3Text, 'score:', bestScore);
+                            } else {
+                                claimAI_TPAProcID = null;
+                                console.warn('[ClaimAI] TPA no match for:', targetL3);
                             }
                         }
                     } catch(e) { console.warn('[ClaimAI] Procedure match error:', e); }
