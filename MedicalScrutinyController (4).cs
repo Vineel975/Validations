@@ -7897,6 +7897,7 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("AlimentExpression",   typeof(string));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
                 dt.Columns.Add("PackageType",         typeof(int));
+                dt.Columns.Add("ProcessHTML",         typeof(string));
 
                 var newRow = dt.NewRow();
                 newRow["TPAProcedureID"]      = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
@@ -7934,12 +7935,8 @@ namespace Enrollment.Controllers
                 newRow["AlimentExpression"]  = DBNull.Value;
                 newRow["Alimentpower"]       = DBNull.Value;
                 newRow["PackageType"]        = DBNull.Value;
+                newRow["ProcessHTML"]        = DBNull.Value;
                 dt.Rows.Add(newRow);
-
-                // Log exact columns being sent
-                var colList = new System.Collections.Generic.List<string>();
-                foreach (System.Data.DataColumn col in dt.Columns) colList.Add(col.ColumnName);
-                return Json(new { success = false, message = "COLS35: " + string.Join("|", colList) });
 
                 // Call VM directly
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
