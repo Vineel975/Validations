@@ -1,35 +1,4 @@
-TPAProcedureID	int
-TPALevel1	int
-TPALevel2	int
-TPALevel3	int
-PackageRate	money
-PackageRatio	decimal
-TreatementTypeID_19	int
-isGipsa	bit
-isDayCare	bit
-isCI	bit
-isPED	bit
-TypeOfAnesthesiaID	tinyint
-Exclusions	varchar
-SurgeryDate	datetime
-BillAmount	money
-DisallowedAmount	money
-DisallowedReasonIDs	varchar
-PayableAmount	money
-BufferAmount	money
-AdditionalreasonIDs	varchar
-Discount	money
-Copay	money
-Remarks	varchar
-ICDCode	int
-PCSCode	varchar
-PCSDescription	varchar
-EligibleAmount	money
-AdditionalAmount	money
-BPCoverageLimit	money
-ProcessHTML	varchar
-Overridepackage	bit
-Overridesuminsured	bit
-PolicySublimit	money
-AlimentExpression	int
-Alimentpower	decimal
+ID                   ClaimID              Slno BillingType_P51 TPAProcedureID PackageRate           PackageRatio                            AdditionalAmount      TreatementTypeID_19 isGipsa isDayCare isCI  isPED TypeOfAnesthesiaID Exclusions           SurgeryDate             BillAmount            DisallowedAmount      DisallowedReasonIDs                                                                                                                                                                                                                                              BPCoverageLimit       EligibleAmount        PayableAmount         BufferAmount          AdditionalreasonIDs                                Discount              Copay                 Remarks                                                                                                                                                                                                                                                          ICDCode     PCSCode    PCSDescription                                                                                                                                                                                                                                                   TPALevel1   TPALevel2   TPALevel3   Deleted CreatedUserRegionID Createddatetime         ModifiedUserRegionID ModifiedDatetime        DeletedUserRegionID DeletedDatetime         ProcessHTML                                                                                                                                                                                                                                                      Overridepackage Overridesuminsured PolicySublimit        AlimentExpression Alimentpower                            PackageType NME_Amount
+-------------------- -------------------- ---- --------------- -------------- --------------------- --------------------------------------- --------------------- ------------------- ------- --------- ----- ----- ------------------ -------------------- ----------------------- --------------------- --------------------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------------- --------------------- --------------------- --------------------- -------------------------------------------------- --------------------- --------------------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ----------- ---------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ----------- ----------- ----------- ------- ------------------- ----------------------- -------------------- ----------------------- ------------------- ----------------------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------- ------------------ --------------------- ----------------- --------------------------------------- ----------- ---------------------
+19901914             26040206200          1    0               503            0.00                  NULL                                    NULL                  66                  1       0         0     0     NULL               NULL                 NULL                    0.00                  -39900.00             NULL                                                                                                                                                                                                                                                             NULL                  39900.00              39900.00              NULL                  NULL                                               0.00                  NULL                  NULL                                                                                                                                                                                                                                                             28145       08RK3JZ    08RK3JZ                                                                                                                                                                                                                                                          494         495         503         0       14142               2026-04-08 00:53:12.360 NULL                 NULL                    NULL                NULL                                                                                                                                                                                                                                                                                     0               0                  NULL                  NULL              NULL                                    3           0.00
+
