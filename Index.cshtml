@@ -8856,21 +8856,6 @@
 
             $(document).ready(function () {
 
-                // ── ClaimAI: Watch hdnClaimsCodingDetails to capture exact schema ──────
-                setInterval(function() {
-                    var val = $('#hdnClaimsCodingDetails').val();
-                    if (val && val !== window._claimAI_lastCodingVal) {
-                        window._claimAI_lastCodingVal = val;
-                        try {
-                            var rows = $.parseJSON(val);
-                            if (rows && rows.length > 0) {
-                                console.log('[ClaimAI] hdnClaimsCodingDetails keys:', Object.keys(rows[0]).join(', '));
-                                window._claimAI_codingSchema = rows[0]; // save schema for reuse
-                            }
-                        } catch(e) {}
-                    }
-                }, 1000);
-
                 // ── ClaimAI: Save Coding Row function ──────────────────────────────────
                 window.claimAI_saveCodingRow = function(tpaProcID, level1, level2, level3, icdCodeID, icdName, diseaseCode) {
                     var claimID     = $('#hdnClaimID').val();
