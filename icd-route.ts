@@ -1,50 +1,57 @@
 import { NextResponse } from "next/server";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+interface IcdEntry { c: string; n: string; l: number; }
+
+let _cache: IcdEntry[] | null = null;
+
+function loadMaster(): IcdEntry[] {
+  if (_cache) return _cache;
+  try {
+    const filePath = join(process.cwd(), "public", "icd-master.json");
+    _cache = JSON.parse(readFileSync(filePath, "utf-8")) as IcdEntry[];
+  } catch {
+    _cache = [];
+  }
+  return _cache;
+}
 
 /**
- * GET /api/icd?condition=cataract        — search by condition name
- * GET /api/icd?code=H25.11               — lookup by exact code
- *
- * Proxies NLM ICD-10-CM API to avoid CORS errors in the browser.
- * Returns: { codes: Array<{ code: string; description: string }> }
+ * GET /api/icd?q=cataract          → search by name/code, returns top 50 matches
+ * GET /api/icd?code=H25.11         → fetch description for a specific code
+ * GET /api/icd?condition=cataract  → legacy: same as q= (for backward compat)
  */
 export async function GET(request: Request): Promise<NextResponse> {
-  try {
-    const { searchParams } = new URL(request.url);
-    const condition = searchParams.get("condition")?.trim();
-    const code      = searchParams.get("code")?.trim();
+  const { searchParams } = new URL(request.url);
+  const q         = (searchParams.get("q") ?? searchParams.get("condition") ?? "").trim().toLowerCase();
+  const exactCode = (searchParams.get("code") ?? "").trim().toLowerCase();
 
-    const terms  = code ?? condition;
-    const maxList = code ? "5" : "10";
+  const master = loadMaster();
 
-    if (!terms) {
-      return NextResponse.json({ codes: [] });
+  if (exactCode) {
+    // Exact code lookup — return single match
+    const match = master.find((e) => e.c.toLowerCase() === exactCode);
+    if (match) {
+      return NextResponse.json({ codes: [{ code: match.c, description: match.n, level: match.l }] });
     }
-
-    const url =
-      `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search` +
-      `?sf=code,name&terms=${encodeURIComponent(terms)}&maxList=${maxList}`;
-
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-
-    if (!response.ok) {
-      return NextResponse.json({ codes: [] }, { status: 502 });
-    }
-
-    // NLM response: [totalCount, [codes], null, [[code,name],...]]
-    const result = await response.json() as [number, string[], null, [string, string][]];
-    const codesArr   = result[1] ?? [];
-    const namesArr   = result[3] ?? [];
-
-    const codes = codesArr.map((c, i) => ({
-      code:        c,
-      description: namesArr[i]?.[1] ?? c,
-    }));
-
-    return NextResponse.json({ codes }, {
-      headers: { "Cache-Control": "public, max-age=3600" },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ codes: [], error: message }, { status: 500 });
+    // Fallback: prefix match
+    const prefix = master.filter((e) => e.c.toLowerCase().startsWith(exactCode)).slice(0, 5);
+    return NextResponse.json({ codes: prefix.map((e) => ({ code: e.c, description: e.n, level: e.l })) });
   }
+
+  if (!q) {
+    return NextResponse.json({ codes: [] });
+  }
+
+  // Search: code prefix first, then name contains
+  const qUpper = q.toUpperCase();
+  const byCode = master.filter((e) => e.c.toUpperCase().startsWith(qUpper));
+  const byName = master.filter((e) => !e.c.toUpperCase().startsWith(qUpper) && e.n.toLowerCase().includes(q));
+
+  const results = [...byCode, ...byName].slice(0, 80);
+
+  return NextResponse.json({
+    codes: results.map((e) => ({ code: e.c, description: e.n, level: e.l })),
+  });
 }
