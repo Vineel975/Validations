@@ -615,6 +615,10 @@ export function ResultView({
     const diagnosis        = displayAnalysis?.medicalAdmissibility?.diagnosis        ?? null;
     const lineOfTreatment  = (displayAnalysis?.medicalAdmissibility as { lineOfTreatment?: string | null } | null | undefined)?.lineOfTreatment ?? null;
 
+    // ── ICD codes — collect all 7 levels from the conditionKey "__icd__" ─────
+    // icdLevels is local to medical-admissibility-tab; read from DOM state via event
+    // We pass the diagnosis text so Spectra can look it up in its MasterData.ICD10
+
     // Infer hospital treatment type: Surgical or Medical
     const diagLower = (diagnosis ?? "").toLowerCase();
     const lineOfTreatmentLower = (lineOfTreatment ?? "").toLowerCase();
@@ -626,6 +630,21 @@ export function ResultView({
         ? "medical"
         : null;
 
+    // Collect ICD codes from the /api/icd?diagnosis endpoint to send to Spectra
+    let icdSlots: Array<{ code: string; description: string; level: number } | null> = [];
+    if (diagnosis) {
+      try {
+        const icdRes = await fetch(`/api/icd?diagnosis=${encodeURIComponent(diagnosis)}`);
+        if (icdRes.ok) {
+          const icdData = await icdRes.json() as { slots?: typeof icdSlots };
+          icdSlots = icdData.slots ?? [];
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Infer procedure levels (Level1/Level2/Level3) from diagnosis + lineOfTreatment
+    const procedureHint = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
+
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
       window.parent.postMessage(
         {
@@ -635,6 +654,8 @@ export function ResultView({
           lineOfTreatment:      lineOfTreatment       ?? "",
           presentingComplaint:  presentingComplaint.trim(),
           hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
+          icdSlots:             icdSlots,
+          procedureHint:        procedureHint,
         },
         "*",
       );
