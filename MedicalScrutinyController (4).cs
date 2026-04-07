@@ -7781,17 +7781,6 @@ namespace Enrollment.Controllers
                             }
                         }
 
-                        // Approved accommodation — confirmed column: ApprovedFacilityID
-                        if (!string.IsNullOrWhiteSpace(approvedFacilityId))
-                        {
-                            int facId;
-                            if (int.TryParse(approvedFacilityId.Trim(), out facId) && facId > 0)
-                            {
-                                setClauses.Add("ApprovedFacilityID = @ApprovedFacilityID");
-                                cmd.Parameters.AddWithValue("@ApprovedFacilityID", facId);
-                            }
-                        }
-
                         if (setClauses.Count == 0)
                             return Json(new { success = true, message = "Nothing to update" });
 
