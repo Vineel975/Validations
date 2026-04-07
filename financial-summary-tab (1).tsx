@@ -322,12 +322,12 @@ export function FinancialSummaryTab({
       return benefitTotal === null ? nonPackageTotal : Math.min(nonPackageTotal, benefitTotal);
     })();
 
-  // Notify parent when edited amounts change
+  // Notify parent whenever effective amounts change (rows edited, added, deleted)
   useEffect(() => {
-    if (onAmountsChange && (editedClaimedAmount !== null || editedTariffAmount !== null)) {
+    if (onAmountsChange) {
       onAmountsChange(effectiveClaimedAmount, effectiveTariffAmount, editedApprovedAmount);
     }
-  }, [editedClaimedAmount, editedTariffAmount]);
+  }, [hospitalRows, tariffRows, editedClaimedAmount, editedTariffAmount]);
 
   // ── BSI derived values ──────────────────────────────────────────────────────
   const bsiBaseSI =
@@ -676,41 +676,48 @@ export function FinancialSummaryTab({
               <span className="text-sm text-gray-900">{benefitTotal !== null ? formatDisplayAmount(benefitTotal) : "—"}</span>
             </div>
 
-            {/* Total Amount Approved — recalculated on the fly */}
+            {/* Total Amount Approved — always uses editedApprovedAmount (recalculated from row totals) */}
             <div className="flex items-center justify-between py-1">
               <span className="text-sm font-bold text-gray-900">Total Amount Approved</span>
               <div className="flex flex-col items-end gap-0.5">
-                {(editedClaimedAmount !== null || editedTariffAmount !== null) ? (
-                  <span className="text-sm font-bold text-blue-700">
+                {editedApprovedAmount !== null && bsiEffectiveBalance !== null &&
+                 editedApprovedAmount > bsiEffectiveBalance && (
+                  <span className="text-xs text-gray-400 line-through">
                     {formatDisplayAmount(editedApprovedAmount)}
-                    <span className="ml-1 text-[10px] font-normal text-blue-400">edited</span>
                   </span>
-                ) : (
-                  <>
-                    {bsiCapApplied && (
-                      <span className="text-xs text-gray-400 line-through">{formatDisplayAmount(totalAmountApproved)}</span>
-                    )}
-                    <span className="text-sm font-bold text-gray-900">{formatDisplayAmount(bsiCappedPayable)}</span>
-                    {bsiCapApplied && (
-                      <span className="text-[10px] font-medium text-amber-600">Capped by live SI balance</span>
-                    )}
-                  </>
+                )}
+                <span className="text-sm font-bold text-gray-900">
+                  {formatDisplayAmount(
+                    editedApprovedAmount !== null && bsiEffectiveBalance !== null
+                      ? Math.min(editedApprovedAmount, bsiEffectiveBalance)
+                      : editedApprovedAmount
+                  )}
+                </span>
+                {editedApprovedAmount !== null && bsiEffectiveBalance !== null &&
+                 editedApprovedAmount > bsiEffectiveBalance && (
+                  <span className="text-[10px] font-medium text-amber-600">Capped by live SI balance</span>
                 )}
               </div>
             </div>
-            {/* One-line explanation */}
+            {/* One-line explanation — uses effective (edited) values */}
             <div className="pt-1 text-xs text-gray-500 italic">
               {(() => {
+                const eff = effectiveClaimedAmount;
+                const tar = effectiveTariffAmount;
+                const fin = editedApprovedAmount !== null && bsiEffectiveBalance !== null
+                  ? Math.min(editedApprovedAmount, bsiEffectiveBalance)
+                  : editedApprovedAmount;
                 const parts: string[] = [];
-                if (hospitalAmount !== null && effectiveTariffTotal !== null && hospitalAmount > effectiveTariffTotal)
-                  parts.push(`bill (${formatDisplayAmount(hospitalAmount)}) exceeds tariff (${formatDisplayAmount(effectiveTariffTotal)})`);
-                if (effectiveTariffTotal !== null && benefitTotal !== null && effectiveTariffTotal > benefitTotal)
-                  parts.push(`tariff (${formatDisplayAmount(effectiveTariffTotal)}) exceeds benefit plan limit (${formatDisplayAmount(benefitTotal)})`);
-                if (bsiCapApplied && bsiEffectiveBalance !== null)
+                if (eff !== null && tar !== null && eff > tar)
+                  parts.push(`bill (${formatDisplayAmount(eff)}) exceeds tariff (${formatDisplayAmount(tar)})`);
+                if (tar !== null && benefitTotal !== null && tar > benefitTotal)
+                  parts.push(`tariff (${formatDisplayAmount(tar)}) exceeds benefit plan limit (${formatDisplayAmount(benefitTotal)})`);
+                if (editedApprovedAmount !== null && bsiEffectiveBalance !== null &&
+                    editedApprovedAmount > bsiEffectiveBalance)
                   parts.push(`capped by SI balance (${formatDisplayAmount(bsiEffectiveBalance)})`);
                 return parts.length
-                  ? `Approving ${formatDisplayAmount(bsiCappedPayable)} because ${parts.join("; ")}.`
-                  : `Approving ${formatDisplayAmount(bsiCappedPayable)} — amount is within all limits.`;
+                  ? `Approving ${formatDisplayAmount(fin)} because ${parts.join("; ")}.`
+                  : `Approving ${formatDisplayAmount(fin)} — amount is within all limits.`;
               })()}
             </div>
           </div>
