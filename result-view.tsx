@@ -432,6 +432,13 @@ export function ResultView({
     return computeClaimCalculation(displayAnalysis);
   }, [displayAnalysis]);
 
+  // Track user-edited amounts from FinancialSummaryTab
+  const [editedAmounts, setEditedAmounts] = useState<{
+    claimed: number | null;
+    tariff: number | null;
+    approved: number | null;
+  }>({ claimed: null, tariff: null, approved: null });
+
   // Financial Summary Calculations
   const financialSummaryTotals = useMemo(() => {
     if (!claimCalculation) {
@@ -630,16 +637,16 @@ export function ResultView({
         : null;
 
     const procedureHint  = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
-    // Total Amount Approved = finalInsurerPayable (after BSI cap) or insurerPayable
-    const eligibleAmount = claimCalculation?.finalInsurerPayable
+    // Use user-edited amounts if available, else computed values
+    const eligibleAmount = editedAmounts.approved
+                        ?? claimCalculation?.finalInsurerPayable
                         ?? displayAnalysis?.finalInsurerPayable
                         ?? claimCalculation?.insurerPayable
                         ?? 0;
-    // Hospital bill — total amount extracted from hospital bill document
-    // Try hospitalBillAfterDiscount first, then totalAmount from PDF extraction
-    const packageAmount  = claimCalculation?.hospitalBillAfterDiscount
-                        || claimCalculation?.hospitalBillBeforeDiscount
-                        || (displayAnalysis?.totalAmount?.value ?? 0);
+    const packageAmount  = editedAmounts.claimed
+                        ?? claimCalculation?.hospitalBillAfterDiscount
+                        ?? claimCalculation?.hospitalBillBeforeDiscount
+                        ?? (displayAnalysis?.totalAmount?.value ?? 0);
 
     // Send clinical details immediately — don't wait for ICD fetch
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
@@ -1140,6 +1147,9 @@ export function ResultView({
                     }}
                     onTariffAmountClick={handleScrollToTariffPage}
                     claimId={state?.claimId}
+                    onAmountsChange={(claimed, tariff, approved) =>
+                      setEditedAmounts({ claimed, tariff, approved })
+                    }
                   />
                 </section>
                 <div className="mt-4 space-y-2">
