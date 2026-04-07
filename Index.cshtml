@@ -8595,6 +8595,7 @@
                     var icdSlots2      = event.data.icdSlots      || [];
                     var procedureHint2 = (event.data.procedureHint || '').toLowerCase();
                     var eligibleAmt2   = event.data.eligibleAmount  || 0;
+                    var packageAmt2    = event.data.packageAmount   || 0;
 
                     // Most specific ICD code = last non-null slot
                     var lastIcdCode2 = '';
@@ -8648,8 +8649,8 @@
                     } catch(e) { console.warn('[ClaimAI] TPA match error:', e); }
 
                     if (procID2) {
-                        console.log('[ClaimAI] setIcdSlots: procID=' + procID2 + ' icd=' + lastIcdCode2 + ' eligible=' + eligibleAmt2);
-                        claimAI_saveCodingRow(procID2, lastIcdCode2, eligibleAmt2);
+                        console.log('[ClaimAI] setIcdSlots: procID=' + procID2 + ' icd=' + lastIcdCode2 + ' eligible=' + eligibleAmt2 + ' package=' + packageAmt2);
+                        claimAI_saveCodingRow(procID2, lastIcdCode2, eligibleAmt2, packageAmt2);
                     } else {
                         console.warn('[ClaimAI] setIcdSlots: no procedure match, hint=' + procedureHint2);
                     }
@@ -8773,11 +8774,14 @@
             $(document).ready(function () {
 
                 // ── ClaimAI: Save Coding Row function ──────────────────────────────────
-                window.claimAI_saveCodingRow = function(tpaProcID, lastIcdCodeStr, eligibleAmt) {
+                window.claimAI_saveCodingRow = function(tpaProcID, lastIcdCodeStr, eligibleAmt, packageAmtFromIframe) {
                     var claimID     = $('#hdnClaimID').val();
                     var slNo        = $('#hdnClaimSlNo').val();
-                    var packageAmt  = parseFloat($('#txtTotalServicesPackageAmount').val()
-                                        || $('#txtbillingtotalpackageamount').val() || 0) || 0;
+                    // Use iframe package amount if available, else fall back to Spectra coding section field
+                    var packageAmt  = parseFloat(packageAmtFromIframe) > 0
+                        ? parseFloat(packageAmtFromIframe)
+                        : (parseFloat($('#txtTotalServicesPackageAmount').val()
+                            || $('#txtbillingtotalpackageamount').val() || 0) || 0);
 
                     $.ajax({
                         url: '@Url.Action("SaveCodingRowForClaimAI", "MedicalScrutiny")',
@@ -8794,7 +8798,8 @@
                             console.log('[ClaimAI] Coding saved:', res);
                             if (res && res.success) {
                                 if (typeof Retrieve_ClaimsCodingDetails === 'function') {
-                                    Retrieve_ClaimsCodingDetails(claimID, slNo, 0);
+                                    var reqTypeID = basicData && basicData[0] ? basicData[0].RequestTypeID : 0;
+                                    Retrieve_ClaimsCodingDetails(claimID, slNo, reqTypeID);
                                 }
                                 var $toast = $('<div/>')
                                     .text('✓ Coding details saved')
