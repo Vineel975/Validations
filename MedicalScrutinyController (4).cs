@@ -7664,7 +7664,6 @@ namespace Enrollment.Controllers
         /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
         /// GET /MedicalScrutiny/GetMedicalBillDocument
         /// </summary>
-        [HttpGet]
         /// <summary>
         /// Returns patient/claim field values needed by ClaimAI for validation.
         /// Called synchronously from JS before submitting to Convex, so it must be fast.
@@ -7839,6 +7838,32 @@ namespace Enrollment.Controllers
                 int icdId     = 0; int.TryParse((icdCodeId     ?? "").Trim(), out icdId);
                 int billType  = 0; int.TryParse((billingType   ?? "0").Trim(), out billType);
 
+                // If icdCodeId not resolved client-side, look up by DiseaseCode string in DB
+                if (icdId == 0 && !string.IsNullOrEmpty(diseaseCode))
+                {
+                    try
+                    {
+                        string connStr = System.Configuration.ConfigurationManager
+                            .ConnectionStrings["McarePlus"].ConnectionString;
+                        using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                        {
+                            conn.Open();
+                            var cmd = new System.Data.SqlClient.SqlCommand(
+                                "SELECT TOP 1 ID FROM MasterData.ICD10 WHERE DiseaseCode = @dc AND Deleted = 0",
+                                conn);
+                            cmd.Parameters.AddWithValue("@dc", diseaseCode.Trim());
+                            var result2 = cmd.ExecuteScalar();
+                            if (result2 != null && result2 != DBNull.Value)
+                                icdId = Convert.ToInt32(result2);
+                        }
+                    }
+                    catch { /* icdId stays 0 */ }
+                }
+
+                // If TPAProcedureID is a category-level ID (no Level3 specificity),
+                // try to find the most specific matching procedure from DB
+                // tpaProcId stays as-is if already specific enough
+
                 // Get existing coding rows to use as schema template
                 var existingRows = _objMadicalScrutinyVM.ClaimCodingDetails_Retrieve(
                     claimIdLong, slNoInt, 0, false);
@@ -7938,16 +7963,9 @@ namespace Enrollment.Controllers
                 newRow["ProcessHTML"]        = DBNull.Value;
                 dt.Rows.Add(newRow);
 
-                // Debug: return exact values being sent
-                return Json(new {
-                    success = false,
-                    message = string.Format("TPAProcedureID={0}, ICDCode={1}, BillType={2}, ClaimID={3}, SlNo={4}",
-                        tpaProcId, icdId, billType, claimIdLong, slNoInt)
-                });
-
                 // Call VM directly
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
-                    claimIdLong, slNoInt, billType, dt,
+                    claimIdLong, (short)slNoInt, billType, dt,
                     Convert.ToInt32(Session[SessionValue.UserRegionID]),
                     out vMessage);
 
