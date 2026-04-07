@@ -7838,8 +7838,8 @@ namespace Enrollment.Controllers
                 int icdId     = 0; int.TryParse((icdCodeId     ?? "").Trim(), out icdId);
                 int billType  = 0; int.TryParse((billingType   ?? "0").Trim(), out billType);
 
-                // If icdCodeId not resolved client-side, look up by DiseaseCode string in DB
-                if (icdId == 0 && !string.IsNullOrEmpty(diseaseCode))
+                // Look up ICD numeric ID by DiseaseCode string from DB
+                if (!string.IsNullOrEmpty(diseaseCode))
                 {
                     try
                     {
@@ -7848,21 +7848,47 @@ namespace Enrollment.Controllers
                         using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                         {
                             conn.Open();
+                            // Try exact match first
                             var cmd = new System.Data.SqlClient.SqlCommand(
-                                "SELECT TOP 1 ID FROM MasterData.ICD10 WHERE DiseaseCode = @dc AND Deleted = 0",
-                                conn);
+                                @"SELECT TOP 1 ID FROM MasterData.ICD10 
+                                  WHERE DiseaseCode = @dc AND Deleted = 0
+                                  ORDER BY Level DESC", conn);
                             cmd.Parameters.AddWithValue("@dc", diseaseCode.Trim());
-                            var result2 = cmd.ExecuteScalar();
-                            if (result2 != null && result2 != DBNull.Value)
-                                icdId = Convert.ToInt32(result2);
+                            var scalar = cmd.ExecuteScalar();
+                            if (scalar != null && scalar != DBNull.Value)
+                            {
+                                icdId = Convert.ToInt32(scalar);
+                            }
+                            else
+                            {
+                                // Try prefix match — walk up (H25.12 → H25.1 → H25)
+                                string code = diseaseCode.Trim();
+                                while (code.Length > 1 && icdId == 0)
+                                {
+                                    if (code.Contains("."))
+                                    {
+                                        int dot = code.LastIndexOf('.');
+                                        string afterDot = code.Substring(dot + 1);
+                                        code = afterDot.Length > 1
+                                            ? code.Substring(0, dot + 1) + afterDot.Substring(0, afterDot.Length - 1)
+                                            : code.Substring(0, dot);
+                                    }
+                                    else code = code.Substring(0, code.Length - 1);
+
+                                    var cmd2 = new System.Data.SqlClient.SqlCommand(
+                                        @"SELECT TOP 1 ID FROM MasterData.ICD10 
+                                          WHERE DiseaseCode = @dc AND Deleted = 0
+                                          ORDER BY Level DESC", conn);
+                                    cmd2.Parameters.AddWithValue("@dc", code);
+                                    var s2 = cmd2.ExecuteScalar();
+                                    if (s2 != null && s2 != DBNull.Value)
+                                        icdId = Convert.ToInt32(s2);
+                                }
+                            }
                         }
                     }
                     catch { /* icdId stays 0 */ }
                 }
-
-                // If TPAProcedureID is a category-level ID (no Level3 specificity),
-                // try to find the most specific matching procedure from DB
-                // tpaProcId stays as-is if already specific enough
 
                 // Get existing coding rows to use as schema template
                 var existingRows = _objMadicalScrutinyVM.ClaimCodingDetails_Retrieve(
