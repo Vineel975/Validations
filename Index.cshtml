@@ -8619,34 +8619,26 @@
                         }
 
                         if (targetL3) {
-                            // Find matching row in mTPAProcedurecs
+                            // Find matching row in mTPAProcedurecs — check all possible field names
                             var l3Norm = targetL3.toLowerCase();
+                            console.log('[ClaimAI] TPA sample item:', JSON.stringify(tpaList[0]));
                             for (var ti = 0; ti < tpaList.length; ti++) {
                                 var tpa = tpaList[ti];
-                                var tl3 = (tpa.Level3 || tpa.level3 || tpa.TPALevel3 || tpa.Name || '').toString().toLowerCase();
-                                if (tl3 === l3Norm || tl3.indexOf(l3Norm) !== -1 || l3Norm.indexOf(tl3) !== -1) {
+                                // Try every possible field name for Level3
+                                var tl3 = (tpa.Level3 || tpa.level3 || tpa.TPALevel3 ||
+                                           tpa.Name   || tpa.name   || tpa.Description ||
+                                           tpa.ProcedureName || '').toString().toLowerCase();
+                                if (tl3 && (tl3 === l3Norm || tl3.indexOf(l3Norm) !== -1 || l3Norm.indexOf(tl3) !== -1)) {
                                     claimAI_TPAProcID  = tpa.ID   || tpa.Id   || tpa.id   || null;
                                     claimAI_Level1Text = tpa.Level1 || tpa.level1 || 'Ophthalmology';
                                     claimAI_Level2Text = tpa.Level2 || tpa.level2 || targetL2;
                                     claimAI_Level3Text = tpa.Level3 || tpa.level3 || targetL3;
+                                    console.log('[ClaimAI] TPA matched:', claimAI_TPAProcID, tl3);
                                     break;
                                 }
                             }
                             if (!claimAI_TPAProcID) {
-                                // Fallback: match by Level2 to get category-level ID
-                                var l2Norm = targetL2.toLowerCase();
-                                for (var ti2 = 0; ti2 < tpaList.length; ti2++) {
-                                    var tpa2 = tpaList[ti2];
-                                    var tl2 = (tpa2.Level2 || tpa2.level2 || '').toString().toLowerCase();
-                                    var tl3b = (tpa2.Level3 || tpa2.level3 || '').toString().toLowerCase();
-                                    if (tl2 === l2Norm && tl3b === l2Norm) {
-                                        claimAI_TPAProcID  = tpa2.ID || tpa2.Id || tpa2.id || null;
-                                        claimAI_Level1Text = tpa2.Level1 || 'Ophthalmology';
-                                        claimAI_Level2Text = targetL2;
-                                        claimAI_Level3Text = targetL2;
-                                        break;
-                                    }
-                                }
+                                console.warn('[ClaimAI] No L3 match for:', targetL3, '— sample keys:', tpaList.length > 0 ? Object.keys(tpaList[0]).join(',') : 'empty');
                             }
                         }
                     } catch(e) { console.warn('[ClaimAI] Procedure match error:', e); }
