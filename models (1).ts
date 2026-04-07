@@ -60,24 +60,32 @@ export const medicalAdmissibilityItemSchema = z.object({
     .string()
     .optional()
     .describe(
-      "ICD-10 code Level 1 — the primary/most specific ICD-10 code for the main diagnosis (e.g. H25.11 for nuclear cataract right eye). Extract directly from the document if present, otherwise derive from the diagnosis. Return only the code string e.g. 'H25.11'. If not determinable, return null.",
+      "The MOST SPECIFIC ICD-10-CM code for the primary diagnosis — the leaf-level code including all sub-types and laterality. " +
+      "Examples: 'H25.11' for nuclear cataract right eye, 'H25.12' for left eye, 'K35.2' for appendicitis with abscess. " +
+      "Extract directly from the document if printed, otherwise derive from the diagnosis text. " +
+      "Always go as specific as possible. Return only the code string e.g. 'H25.11'. " +
+      "The system uses this single code to auto-generate the full 7-level ICD hierarchy.",
     ),
   icdCode2: z
     .string()
+    .nullable()
     .optional()
     .describe(
-      "ICD-10 code Level 2 — a secondary ICD-10 code representing a related condition, complication, or comorbidity mentioned in the document. Return only the code string. If none, return null.",
+      "ICD-10 code for a secondary diagnosis or comorbidity explicitly mentioned (e.g. 'I10' for hypertension). Return null if only one diagnosis.",
     ),
   icdCode3: z
     .string()
+    .nullable()
     .optional()
     .describe(
-      "ICD-10 code Level 3 — a tertiary ICD-10 code for any additional condition, procedure, or finding mentioned. Return only the code string. If none, return null.",
+      "ICD-10 code for a third condition or significant finding if present. Return null if not applicable.",
     ),
   doctorNotes: z
     .string()
+    .nullable()
+    .optional()
     .describe(
-      "Handwritten notes or physical remarks written by the doctor. This should be actual written notes, observations, or comments physically written by the doctor, NOT formal diagnosis statements or nature of illness (those belong in the diagnosis field).",
+      "Clinical notes, observations, or remarks written by the doctor (handwritten or printed). NOT the formal diagnosis — those go in the diagnosis field. Return null if no doctor notes found.",
     ),
   doctorNotesPageNumber: z
     .number()
