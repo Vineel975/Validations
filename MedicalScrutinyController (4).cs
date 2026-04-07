@@ -7893,6 +7893,12 @@ namespace Enrollment.Controllers
                     dt.Rows.Add(row);
                 }
 
+                // Log all columns for debugging
+                var allColNames = new System.Collections.Generic.List<string>();
+                foreach (System.Data.DataColumn col in dt.Columns) allColNames.Add(col.ColumnName);
+                vMessage = "COLUMNS: " + string.Join(", ", allColNames);
+                return Json(new { success = false, message = vMessage, debug = true });
+
                 // Always remove known display-only columns
                 foreach (var bad in new[] { "ICDName", "DiseaseCode", "ICDLevel1", "ICDLevel2",
                     "ICDLevel3", "ICDLevel4", "ICDLevel5", "ICDLevel6", "ICDLevel7",
