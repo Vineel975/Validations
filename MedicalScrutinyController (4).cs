@@ -7812,197 +7812,107 @@ namespace Enrollment.Controllers
 
         /// <summary>
         /// Called by ClaimAI to save a single coding row without knowing the exact DataTable schema.
-        /// Gets schema from existing rows or creates it correctly server-side.
-        /// POST /MedicalScrutiny/SaveCodingRowForClaimAI
-        /// </summary>
         [HttpPost]
         public ActionResult SaveCodingRowForClaimAI(
-            string claimId,
-            string slNo,
-            string tpaProcedureId,
-            string tpaLevel1Id,
-            string tpaLevel2Id,
-            string tpaLevel3Id,
-            string icdCodeId,
-            string icdName,
-            string diseaseCode,
-            string billingType)
+            string claimId, string slNo, string tpaProcedureId,
+            string icdCodeStr, string eligibleAmount, string packageAmount)
         {
             try
             {
                 if (Session[SessionValue.UserRegionID] == null)
                     return Json(new { success = false, message = "Session expired" });
 
-                long claimIdLong; int slNoInt;
+                long claimIdLong; int slNoInt; int tpaProcId = 0;
                 if (!long.TryParse((claimId ?? "").Trim(), out claimIdLong) ||
                     !int.TryParse((slNo ?? "").Trim(), out slNoInt))
                     return Json(new { success = false, message = "Invalid ClaimID or SlNo" });
+                int.TryParse((tpaProcedureId ?? "").Trim(), out tpaProcId);
 
-                int tpaProcId  = 0; int.TryParse((tpaProcedureId ?? "").Trim(), out tpaProcId);
-                int tpaLevel1  = 0; int.TryParse((tpaLevel1Id    ?? "").Trim(), out tpaLevel1);
-                int tpaLevel2  = 0; int.TryParse((tpaLevel2Id    ?? "").Trim(), out tpaLevel2);
-                int tpaLevel3  = 0; int.TryParse((tpaLevel3Id    ?? "").Trim(), out tpaLevel3);
-                if (tpaLevel3 == 0) tpaLevel3 = tpaProcId;
-                int icdId     = 0; int.TryParse((icdCodeId     ?? "").Trim(), out icdId);
-                int billType  = 202; // default working BillingType_P51 value
-                int parsedBillType = 0;
-                if (int.TryParse((billingType ?? "").Trim(), out parsedBillType) && parsedBillType > 0)
-                    billType = parsedBillType;
+                decimal eligibleAmt = 0m; decimal.TryParse((eligibleAmount ?? "").Trim(), out eligibleAmt);
+                decimal packageAmt  = 0m; decimal.TryParse((packageAmount  ?? "").Trim(), out packageAmt);
 
-                // Load ALL required fields from mTPAProcedurecs for the matched procedure
-                int     procIcdCode      = 0;
-                int     procPcsCode      = 0;
-                string  procPcsDesc      = null;
-                int     procPackageType  = 0;
-                decimal procPackageRate  = 0m;
-                decimal procPackageRatio = 0m;
-                int     procTreatTypeId  = 0;
-                bool    procIsGipsa      = false;
-                bool    procIsDayCare    = false;
-                bool    procIsCI         = false;
-                bool    procIsPED        = false;
-                decimal billAmt          = 0m;
-                decimal eligibleAmt      = 0m;
-                decimal payableAmt       = 0m;
-
-                try
+                string connStr = System.Configuration.ConfigurationManager
+                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
+                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
                 {
-                    string connStr = System.Configuration.ConfigurationManager
-                        .ConnectionStrings["McarePlusEntities"].ConnectionString;
-                    if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var m = System.Text.RegularExpressions.Regex.Match(
-                            connStr, @"provider connection string=""([^""]+)""",
-                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                        if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
-                    }
-                    using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                    {
-                        conn.Open();
-
-                        // Step 1: Get all values from MasterData.TPAProcedures
-                        // Real columns: ICDCode(str), PCSCode(str), InvestigationID(int numeric PCS ID),
-                        // PPNDescription, Level(PackageType), TreatmentType_P19, isGIPSA, isDayCare, isCI, isPED, Diagnosis
-                        string procIcdCodeStr = null;
-                        string procPcsCodeStr = null;
-
-                        if (tpaProcId > 0)
-                        {
-                            var cmdProc = new System.Data.SqlClient.SqlCommand(
-                                @"SELECT TOP 1
-                                    ISNULL(ICDCode, '')             AS ICDCodeStr,
-                                    ISNULL(PCSCode, '')             AS PCSCodeStr,
-                                    ISNULL(PPNDescription, '')      AS PCSDescription,
-                                    ISNULL(InvestigationID, 0)      AS PCSNumericID,
-                                    ISNULL(Level, 0)                AS PackageType,
-                                    ISNULL(TreatmentType_P19, 0)    AS TreatTypeID,
-                                    ISNULL(isGIPSA, 0)              AS isGipsa,
-                                    ISNULL(isDayCare, 0)            AS isDayCare,
-                                    ISNULL(isCI, 0)                 AS isCI,
-                                    ISNULL(isPED, 0)                AS isPED,
-                                    ISNULL(Diagnosis, '')           AS Diagnosis
-                                  FROM MasterData.TPAProcedures
-                                  WHERE ID = @id AND Deleted = 0", conn);
-                            cmdProc.Parameters.AddWithValue("@id", tpaProcId);
-                            using (var rdr = cmdProc.ExecuteReader())
-                            {
-                                if (rdr.Read())
-                                {
-                                    procIcdCodeStr  = rdr["ICDCodeStr"].ToString().Trim();
-                                    procPcsCodeStr  = rdr["PCSCodeStr"].ToString().Trim();
-                                    procPcsDesc     = !string.IsNullOrEmpty(rdr["PCSDescription"].ToString().Trim())
-                                                      ? rdr["PCSDescription"].ToString().Trim()
-                                                      : rdr["PCSCodeStr"].ToString().Trim();
-                                    procPcsCode     = Convert.ToInt32(rdr["PCSNumericID"]);
-                                    procPackageType = Convert.ToInt32(rdr["PackageType"]);
-                                    procTreatTypeId = Convert.ToInt32(rdr["TreatTypeID"]);
-                                    procIsGipsa     = Convert.ToBoolean(rdr["isGipsa"]);
-                                    procIsDayCare   = Convert.ToBoolean(rdr["isDayCare"]);
-                                    procIsCI        = Convert.ToBoolean(rdr["isCI"]);
-                                    procIsPED       = Convert.ToBoolean(rdr["isPED"]);
-                                    // Use Diagnosis as fallback diseaseCode
-                                    if (string.IsNullOrEmpty(diseaseCode))
-                                        diseaseCode = rdr["Diagnosis"].ToString().Trim();
-                                }
-                            }
-                        }
-
-                        // Step 2: ICD lookup — use procedure's ICDCode string first, then diseaseCode
-                        // ICDCode in TPAProcedures is a string like 'H25', look up numeric ID in ICD10 table
-                        string icdSearchCode = !string.IsNullOrEmpty(procIcdCodeStr) ? procIcdCodeStr
-                                             : !string.IsNullOrEmpty(diseaseCode)    ? diseaseCode
-                                             : null;
-
-                        if (procIcdCode == 0 && !string.IsNullOrEmpty(icdSearchCode))
-                        {
-                            string code = icdSearchCode.Trim();
-                            while (code.Length > 1 && procIcdCode == 0)
-                            {
-                                var cmdIcd = new System.Data.SqlClient.SqlCommand(
-                                    @"SELECT TOP 1 ID FROM MasterData.ICD10
-                                      WHERE DiseaseCode = @dc AND Deleted = 0
-                                      ORDER BY Level DESC", conn);
-                                cmdIcd.Parameters.AddWithValue("@dc", code);
-                                var s = cmdIcd.ExecuteScalar();
-                                if (s != null && s != DBNull.Value)
-                                    procIcdCode = Convert.ToInt32(s);
-                                else
-                                {
-                                    if (code.Contains("."))
-                                    {
-                                        int dot = code.LastIndexOf('.');
-                                        string after = code.Substring(dot + 1);
-                                        code = after.Length > 1
-                                            ? code.Substring(0, dot + 1) + after.Substring(0, after.Length - 1)
-                                            : code.Substring(0, dot);
-                                    }
-                                    else code = code.Substring(0, code.Length - 1);
-                                }
-                            }
-                        }
-                        icdId = procIcdCode;
-
-
-                        // Step 3: Bill amount from Claimsdetails (package amount)
-                        var cmdBill = new System.Data.SqlClient.SqlCommand(
-                            @"SELECT TOP 1 ISNULL(PackageAmount, ISNULL(BillAmount, 0))
-                              FROM Claimsdetails
-                              WHERE ClaimID = @cid AND SlNo = @sno", conn);
-                        cmdBill.Parameters.AddWithValue("@cid", claimIdLong);
-                        cmdBill.Parameters.AddWithValue("@sno", slNoInt);
-                        var billScalar = cmdBill.ExecuteScalar();
-                        billAmt    = billScalar != null && billScalar != DBNull.Value
-                            ? Convert.ToDecimal(billScalar) : procPackageRate;
-                        eligibleAmt = billAmt;
-                        payableAmt  = billAmt;
-                    }
+                    var m2 = System.Text.RegularExpressions.Regex.Match(connStr,
+                        @"provider connection string=""([^""]+)""",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m2.Success) connStr = m2.Groups[1].Value.Replace("&quot;", """);
                 }
-                catch { /* use defaults */ }
 
-                // Get existing coding rows to use as schema template
-                // Get existing coding rows to use as schema template
-                var existingRows = _objMadicalScrutinyVM.ClaimCodingDetails_Retrieve(
-                    claimIdLong, slNoInt, 0, false);
-
-                System.Data.DataTable dt;
+                int tpaLevel1Id = 0, tpaLevel2Id = 0, icdNumericId = 0;
+                int pcsNumericId = 0, treatTypeId = 0, pkgType = 0, siCategory = 69;
+                string pcsCodeStr = null, pcsDesc = null;
                 string vMessage = string.Empty;
 
-                // Build DataTable by repeatedly trying to save and removing offending columns
-                // This handles any SP schema without needing to know exact columns upfront
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
 
-                // Start with columns from existing rows, or build minimal set
-                // Build DataTable with EXACT schema from hdnClaimsCodingDetails
-                // (captured from browser: TPAProcedureID, TPALevel1, TPALevel2, TPALevel3,
-                //  PackageRate, PackageRatio, TreatementTypeID_19, isGipsa, isDayCare, isCI,
-                //  isPED, TypeOfAnesthesiaID, Exclusions, SurgeryDate, BillAmount,
-                //  DisallowedAmount, DisallowedReasonIDs, PayableAmount, BufferAmount,
-                //  AdditionalreasonIDs, Discount, Copay, Remarks, ICDCode, ICDName,
-                //  DiseaseCode, PCSCode, PCSDescription, EligibleAmount, AdditionalAmount,
-                //  BPCoverageLimit, ProcessHTML, Overridepackage, Overridesuminsured,
-                //  PolicySublimit, AlimentExpression, Alimentpower, PackageType)
-                dt = new System.Data.DataTable();
-                // Exact 35-column schema (display-only cols removed: ICDName, DiseaseCode,
-                // PCSDescription, TPALevel1, TPALevel2, TPALevel3, ProcessHTML)
+                    // 1. Get procedure details + parent chain for Level1/2
+                    if (tpaProcId > 0)
+                    {
+                        var cmdP = new System.Data.SqlClient.SqlCommand(@"
+                            SELECT p.ParentID AS L2, g.ParentID AS L1,
+                                ISNULL(p.TreatmentType_P19,0) AS TT,
+                                ISNULL(p.Level,0) AS PKT,
+                                ISNULL(p.ICDCode,'') AS ICD,
+                                ISNULL(p.PCSCode,'') AS PCS,
+                                ISNULL(p.InvestigationID,0) AS PCSID,
+                                ISNULL(p.PPNDescription,'') AS PPND
+                            FROM MasterData.TPAProcedures p
+                            LEFT JOIN MasterData.TPAProcedures g ON g.ID=p.ParentID
+                            WHERE p.ID=@id AND p.Deleted=0", conn);
+                        cmdP.Parameters.AddWithValue("@id", tpaProcId);
+                        using (var r = cmdP.ExecuteReader())
+                        {
+                            if (r.Read())
+                            {
+                                tpaLevel2Id  = r["L2"]   != DBNull.Value ? Convert.ToInt32(r["L2"])   : 0;
+                                tpaLevel1Id  = r["L1"]   != DBNull.Value ? Convert.ToInt32(r["L1"])   : 0;
+                                treatTypeId  = Convert.ToInt32(r["TT"]);
+                                pkgType      = Convert.ToInt32(r["PKT"]);
+                                pcsNumericId = Convert.ToInt32(r["PCSID"]);
+                                pcsCodeStr   = r["PCS"].ToString().Trim();
+                                pcsDesc      = r["PPND"].ToString().Trim();
+                                if (string.IsNullOrEmpty(pcsDesc)) pcsDesc = pcsCodeStr;
+                                if (string.IsNullOrEmpty(icdCodeStr))
+                                    icdCodeStr = r["ICD"].ToString().Trim();
+                            }
+                        }
+                    }
+
+                    // 2. Resolve ICD numeric ID — walk up code if needed
+                    if (!string.IsNullOrEmpty(icdCodeStr))
+                    {
+                        string code = icdCodeStr.Trim();
+                        while (code.Length > 0 && icdNumericId == 0)
+                        {
+                            var cmdI = new System.Data.SqlClient.SqlCommand(
+                                "SELECT TOP 1 ID FROM MasterData.ICD10 WHERE DiseaseCode=@dc AND Deleted=0 ORDER BY Level DESC", conn);
+                            cmdI.Parameters.AddWithValue("@dc", code);
+                            var sc = cmdI.ExecuteScalar();
+                            if (sc != null && sc != DBNull.Value) { icdNumericId = Convert.ToInt32(sc); break; }
+                            if (code.Contains("."))
+                            {
+                                int dot = code.LastIndexOf('.'); string after = code.Substring(dot+1);
+                                code = after.Length > 1 ? code.Substring(0, dot+1) + after.Substring(0, after.Length-1) : code.Substring(0, dot);
+                            }
+                            else if (code.Length > 1) code = code.Substring(0, code.Length-1);
+                            else break;
+                        }
+                    }
+
+                    // 3. SICategory for Primary
+                    var cmdCat = new System.Data.SqlClient.SqlCommand(
+                        "SELECT TOP 1 ID FROM MasterData.SumInsuredCategory WHERE Name LIKE '%Primary%' AND Deleted=0", conn);
+                    var catSc = cmdCat.ExecuteScalar();
+                    if (catSc != null && catSc != DBNull.Value) siCategory = Convert.ToInt32(catSc);
+                }
+
+                // 4. Build exact 35-column DataTable
+                var dt = new System.Data.DataTable();
                 dt.Columns.Add("TPAProcedureID",      typeof(int));
                 dt.Columns.Add("TPALevel1",           typeof(int));
                 dt.Columns.Add("TPALevel2",           typeof(int));
@@ -8038,57 +7948,52 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("AlimentExpression",   typeof(string));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
                 dt.Columns.Add("PackageType",         typeof(int));
-                dt.Columns.Add("ProcessHTML",         typeof(string));
 
-                var newRow = dt.NewRow();
-                newRow["TPAProcedureID"]      = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
-                newRow["TPALevel1"]           = DBNull.Value;
-                newRow["TPALevel2"]           = DBNull.Value;
-                newRow["TPALevel3"]           = DBNull.Value;
-                newRow["PackageRate"]         = procPackageRate > 0 ? (object)procPackageRate : (object)0m;
-                newRow["PackageRatio"]        = procPackageRatio > 0 ? (object)procPackageRatio : (object)0m;
-                newRow["TreatementTypeID_19"] = procTreatTypeId > 0 ? (object)procTreatTypeId : DBNull.Value;
-                newRow["isGipsa"]             = procIsGipsa;
-                newRow["isDayCare"]           = procIsDayCare;
-                newRow["isCI"]               = procIsCI;
-                newRow["isPED"]              = procIsPED;
-                newRow["TypeOfAnesthesiaID"]  = DBNull.Value;
-                newRow["Exclusions"]          = DBNull.Value;
-                newRow["SurgeryDate"]         = DBNull.Value;
-                newRow["BillAmount"]          = billAmt;
-                newRow["DisallowedAmount"]    = 0m;
-                newRow["DisallowedReasonIDs"] = DBNull.Value;
-                newRow["PayableAmount"]       = payableAmt;
-                newRow["BufferAmount"]        = 0m;
-                newRow["AdditionalreasonIDs"] = DBNull.Value;
-                newRow["Discount"]            = 0m;
-                newRow["Copay"]              = 0m;
-                newRow["Remarks"]            = DBNull.Value;
-                newRow["ICDCode"]            = icdId > 0 ? (object)icdId : DBNull.Value;
-                newRow["PCSCode"]            = procPcsCode > 0 ? (object)procPcsCode : DBNull.Value;
-                newRow["PCSDescription"]     = !string.IsNullOrEmpty(procPcsDesc) ? (object)procPcsDesc : DBNull.Value;
-                newRow["EligibleAmount"]     = eligibleAmt;
-                newRow["AdditionalAmount"]   = 0m;
-                newRow["BPCoverageLimit"]    = DBNull.Value;
-                newRow["Overridepackage"]    = false;
-                newRow["Overridesuminsured"] = false;
-                newRow["PolicySublimit"]     = false;
-                newRow["AlimentExpression"]  = DBNull.Value;
-                newRow["Alimentpower"]       = DBNull.Value;
-                newRow["PackageType"]        = procPackageType > 0 ? (object)procPackageType : DBNull.Value;
-                newRow["ProcessHTML"]        = DBNull.Value;
-                dt.Rows.Add(newRow);
+                var row = dt.NewRow();
+                row["TPAProcedureID"]      = tpaProcId > 0   ? (object)tpaProcId   : DBNull.Value;
+                row["TPALevel1"]           = tpaLevel1Id > 0 ? (object)tpaLevel1Id : DBNull.Value;
+                row["TPALevel2"]           = tpaLevel2Id > 0 ? (object)tpaLevel2Id : DBNull.Value;
+                row["TPALevel3"]           = tpaProcId > 0   ? (object)tpaProcId   : DBNull.Value;
+                row["PackageRate"]         = 0m;
+                row["PackageRatio"]        = DBNull.Value;
+                row["TreatementTypeID_19"] = treatTypeId > 0 ? (object)treatTypeId : DBNull.Value;
+                row["isGipsa"]             = true;
+                row["isDayCare"]           = false;
+                row["isCI"]               = false;
+                row["isPED"]              = false;
+                row["TypeOfAnesthesiaID"]  = DBNull.Value;
+                row["Exclusions"]          = DBNull.Value;
+                row["SurgeryDate"]         = DBNull.Value;
+                row["BillAmount"]          = packageAmt;
+                row["DisallowedAmount"]    = 0m;
+                row["DisallowedReasonIDs"] = DBNull.Value;
+                row["PayableAmount"]       = eligibleAmt;
+                row["BufferAmount"]        = DBNull.Value;
+                row["AdditionalreasonIDs"] = DBNull.Value;
+                row["Discount"]            = 0m;
+                row["Copay"]              = DBNull.Value;
+                row["Remarks"]            = DBNull.Value;
+                row["ICDCode"]            = icdNumericId > 0 ? (object)icdNumericId : DBNull.Value;
+                row["PCSCode"]            = pcsNumericId > 0 ? (object)pcsNumericId : DBNull.Value;
+                row["PCSDescription"]     = !string.IsNullOrEmpty(pcsDesc) ? (object)pcsDesc : DBNull.Value;
+                row["EligibleAmount"]     = eligibleAmt;
+                row["AdditionalAmount"]   = DBNull.Value;
+                row["BPCoverageLimit"]    = DBNull.Value;
+                row["Overridepackage"]    = false;
+                row["Overridesuminsured"] = false;
+                row["PolicySublimit"]     = false;
+                row["AlimentExpression"]  = DBNull.Value;
+                row["Alimentpower"]       = DBNull.Value;
+                row["PackageType"]        = pkgType > 0 ? (object)pkgType : DBNull.Value;
+                dt.Rows.Add(row);
 
-                // Call VM directly
+                // 5. Save
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
-                    claimIdLong, slNoInt, billType, dt,
-                    Convert.ToInt32(Session[SessionValue.UserRegionID]),
-                    out vMessage);
+                    claimIdLong, slNoInt, 0, dt,
+                    Convert.ToInt32(Session[SessionValue.UserRegionID]), out vMessage);
 
-                bool isSuccess = result > 0 ||
-                    (vMessage != null && vMessage.ToLower().Contains("success"));
-
-                return Json(new { success = isSuccess, message = vMessage });
+                bool ok = result > 0 || (vMessage != null && vMessage.ToLower().Contains("success"));
+                return Json(new { success = ok, message = vMessage });
             }
             catch (Exception ex)
             {
@@ -8097,7 +8002,6 @@ namespace Enrollment.Controllers
             }
         }
 
-        [HttpGet]
         public ActionResult GetClaimFieldsForValidation(string claimId)
         {
             try
