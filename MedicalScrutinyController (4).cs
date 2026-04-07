@@ -7936,6 +7936,11 @@ namespace Enrollment.Controllers
                 newRow["PackageType"]        = DBNull.Value;
                 dt.Rows.Add(newRow);
 
+                // Log exact columns being sent
+                var colList = new System.Collections.Generic.List<string>();
+                foreach (System.Data.DataColumn col in dt.Columns) colList.Add(col.ColumnName);
+                return Json(new { success = false, message = "COLS35: " + string.Join("|", colList) });
+
                 // Call VM directly
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
                     claimIdLong, slNoInt, billType, dt,
