@@ -8479,7 +8479,6 @@
                 if (!event.data || event.data.source !== 'claimai') return;
 
                 if (event.data.type === 'setApprovedAccommodation') {
-                    // AI determined a specific facility ID — set it directly
                     var facilityId = event.data.facilityId;
                     if (facilityId) {
                         var $ddl = $('#ddlApprovedFacility');
@@ -8487,10 +8486,10 @@
                             $ddl.val(facilityId).trigger('change');
                         }
                     }
+                    window._claimAI_approvedFacilityId = facilityId || '';
                 }
 
                 if (event.data.type === 'copyAvailedToApproved') {
-                    // No spectraFields available — copy availed to approved using DOM values
                     var availedVal = $('#ddlReceivedAccomodation').val();
                     if (availedVal) {
                         var $aprvDdl = $('#ddlApprovedFacility');
@@ -8498,6 +8497,7 @@
                             $aprvDdl.val(availedVal).trigger('change');
                         }
                     }
+                    window._claimAI_approvedFacilityId = availedVal || '';
                 }
 
                 if (event.data.type === 'setClinicalDetails') {
@@ -8548,6 +8548,11 @@
                         var claimDetailsId = $('#hdnClaimDetailsID').val() || '';
                         var hospTypeId     = $('#ddlHospTreatmentType').val() || '';
 
+                        // Read approved facility — prefer stored value (set before setClinicalDetails fires)
+                        // then fall back to current dropdown value
+                        var approvedFacId = window._claimAI_approvedFacilityId || $('#ddlApprovedFacility').val() || '';
+                        console.log('[ClaimAI] approvedFacId:', approvedFacId, 'ddl val:', $('#ddlApprovedFacility').val());
+
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
                             type: 'POST',
@@ -8556,7 +8561,8 @@
                                 probableDiagnosis:       $('#txtProbableDiagnosis').val(),
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
-                                hospTreatmentTypeId:     hospTypeId
+                                hospTreatmentTypeId:     hospTypeId,
+                                approvedFacilityId:      approvedFacId
                             },
                             success: function (res) {
                                 if (res && res.success) {
