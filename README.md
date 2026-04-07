@@ -1,3 +1,16 @@
+Index:16711 [ClaimAI] Coding save returned failure: 
+{success: false, message: "Column 'PackageType' does not belong to table ."}
+message
+: 
+"Column 'PackageType' does not belong to table ."
+success
+: 
+false
+[[Prototype]]
+: 
+Object
+
+
 ID	Level1	Level2	Level3
 494	Ophthalmology	 	Ophtholmology
 495	Ophtholmology	Cataract Surgery	Cataract Surgery
