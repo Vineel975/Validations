@@ -8335,6 +8335,7 @@
         if ($('#hdnClaimsCodingDetails').val() != '') {
             var Codingdata=[];
             Codingdata = $.parseJSON($('#hdnClaimsCodingDetails').val());
+            console.log('[ClaimAI] hdnClaimsCodingDetails keys:', Codingdata.length > 0 ? Object.keys(Codingdata[0]).join(', ') : 'empty');
             for (var i = 0; i < Codingdata.length; i++) {
                 $('#hdnCodingEligibilityDesign_'+Codingdata[i].TPALevel3).val('');
             }
