@@ -611,44 +611,6 @@ export function MedicalAdmissibilityTab({
                   </div>
                 </div>
               )}
-              {/* Standalone ICD Codes — always shown when diagnosis available */}
-              {icdLevels.some((m) => m.get("__icd__")) && (
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold text-gray-700">ICD Codes</div>
-                  <div className="rounded-md border bg-white overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b bg-gray-50">
-                          {Array.from({ length: 7 }, (_, i) => (
-                            <th key={i} className="px-2 py-1.5 text-left font-medium text-gray-600 min-w-[170px]">
-                              {`ICD Level ${i + 1}`}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          {Array.from({ length: 7 }, (_, i) => (
-                            <td key={i} className="px-1 py-1 align-top border-r last:border-r-0">
-                              <IcdCombobox
-                                value={icdLevels[i]?.get("__icd__") ?? ""}
-                                onChange={(code, desc) => handleICDLevelChange(i, "__icd__", code, desc)}
-                                placeholder={`Level ${i + 1}`}
-                              />
-                              {icdLevels[i]?.get("__icd__") && (
-                                <div className="mt-0.5 px-1 text-[10px] text-gray-500 leading-tight">
-                                  {icdDescriptions.get(icdLevels[i].get("__icd__")!) || ""}
-                                </div>
-                              )}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
               {conditionRows.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-sm font-semibold text-gray-700">
@@ -707,12 +669,16 @@ export function MedicalAdmissibilityTab({
                                 />
                               </TableCell>
                             ))}
-                            {/* Description for Code-1 */}
+                            {/* Description — from the most specific (last populated) ICD level */}
                             <TableCell className="align-top">
                               <span className="text-xs text-gray-600 leading-tight">
                                 {(() => {
-                                  const code1 = getICDLevel(0, row.conditionKey!, row.icdCode);
-                                  return code1 ? (icdDescriptions.get(code1) || "-") : "-";
+                                  // Find the last non-empty level (most specific code)
+                                  for (let lvl = 6; lvl >= 0; lvl--) {
+                                    const code = getICDLevel(lvl, row.conditionKey!);
+                                    if (code) return icdDescriptions.get(code) || code;
+                                  }
+                                  return "-";
                                 })()}
                               </span>
                             </TableCell>
