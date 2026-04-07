@@ -7938,6 +7938,13 @@ namespace Enrollment.Controllers
                 newRow["ProcessHTML"]        = DBNull.Value;
                 dt.Rows.Add(newRow);
 
+                // Debug: return exact values being sent
+                return Json(new {
+                    success = false,
+                    message = string.Format("TPAProcedureID={0}, ICDCode={1}, BillType={2}, ClaimID={3}, SlNo={4}",
+                        tpaProcId, icdId, billType, claimIdLong, slNoInt)
+                });
+
                 // Call VM directly
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
                     claimIdLong, slNoInt, billType, dt,
