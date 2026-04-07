@@ -7843,8 +7843,16 @@ namespace Enrollment.Controllers
                 {
                     try
                     {
+                        // Use exact same pattern as SaveClinicalDetailsForClaimAI (confirmed working)
                         string connStr = System.Configuration.ConfigurationManager
-                            .ConnectionStrings["McarePlus"].ConnectionString;
+                            .ConnectionStrings["McarePlusEntities"].ConnectionString;
+                        if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var m = System.Text.RegularExpressions.Regex.Match(
+                                connStr, @"provider connection string=""([^""]+)""",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                            if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                        }
                         using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                         {
                             conn.Open();
