@@ -7646,9 +7646,9 @@ namespace Enrollment.Controllers
                 }
 
                 byte[] bytes = System.IO.File.ReadAllBytes(filePath);
-                res.Success = true;
-                res.Message = "Tariff document loaded.";
-                res.Data = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
+                res.Success  = true;
+                res.Message  = "Tariff document loaded.";
+                res.Data     = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -7664,6 +7664,7 @@ namespace Enrollment.Controllers
         /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
         /// GET /MedicalScrutiny/GetMedicalBillDocument
         /// </summary>
+        [HttpGet]
         /// <summary>
         /// Returns patient/claim field values needed by ClaimAI for validation.
         /// Called synchronously from JS before submitting to Convex, so it must be fast.
@@ -7724,7 +7725,7 @@ namespace Enrollment.Controllers
                         checkCmd.CommandText = "SELECT COUNT(1) FROM Claimsdetails WHERE ID = @ID AND ISNULL(Deleted,0) = 0";
                         checkCmd.Parameters.AddWithValue("@ID", rowId);
                         int exists = (int)checkCmd.ExecuteScalar();
-
+        
                         if (exists == 0)
                         {
                             // hdnClaimDetailsID might actually be ClaimID — find latest SlNo row
@@ -7735,7 +7736,7 @@ namespace Enrollment.Controllers
                             if (found != null && found != DBNull.Value)
                             {
                                 rowId = Convert.ToInt64(found);
-                            }
+                                    }
                             else
                             {
                                 return Json(new { success = false, rowsAffected = 0, error = "Row not found" });
@@ -7809,6 +7810,114 @@ namespace Enrollment.Controllers
             }
         }
 
+        /// <summary>
+        /// Called by ClaimAI to save a single coding row without knowing the exact DataTable schema.
+        /// Gets schema from existing rows or creates it correctly server-side.
+        /// POST /MedicalScrutiny/SaveCodingRowForClaimAI
+        /// </summary>
+        [HttpPost]
+        public ActionResult SaveCodingRowForClaimAI(
+            string claimId,
+            string slNo,
+            string tpaProcedureId,
+            string icdCodeId,
+            string icdName,
+            string diseaseCode,
+            string billingType)
+        {
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                    return Json(new { success = false, message = "Session expired" });
+
+                long claimIdLong; int slNoInt;
+                if (!long.TryParse((claimId ?? "").Trim(), out claimIdLong) ||
+                    !int.TryParse((slNo ?? "").Trim(), out slNoInt))
+                    return Json(new { success = false, message = "Invalid ClaimID or SlNo" });
+
+                int tpaProcId = 0; int.TryParse((tpaProcedureId ?? "").Trim(), out tpaProcId);
+                int icdId     = 0; int.TryParse((icdCodeId     ?? "").Trim(), out icdId);
+                int billType  = 0; int.TryParse((billingType   ?? "0").Trim(), out billType);
+
+                // Get existing coding rows to use as schema template
+                var existingRows = _objMadicalScrutinyVM.ClaimCodingDetails_Retrieve(
+                    claimIdLong, slNoInt, 0, false);
+
+                System.Data.DataTable dt;
+                string vMessage = string.Empty;
+
+                if (existingRows != null && existingRows.Rows.Count > 0)
+                {
+                    // Clone first row and update fields
+                    dt = existingRows.Clone(); // same schema, no data
+                    var newRow = dt.NewRow();
+                    foreach (System.Data.DataColumn col in existingRows.Columns)
+                        newRow[col.ColumnName] = existingRows.Rows[0][col.ColumnName];
+
+                    // Override ICD and procedure fields
+                    if (dt.Columns.Contains("TPAProcedureID") && tpaProcId > 0)
+                        newRow["TPAProcedureID"] = tpaProcId;
+                    if (dt.Columns.Contains("ICDCode") && icdId > 0)
+                        newRow["ICDCode"] = icdId;
+
+                    dt.Rows.Add(newRow);
+
+                    // Remove display-only columns before saving
+                    if (dt.Columns.Contains("ICDName"))    dt.Columns.Remove("ICDName");
+                    if (dt.Columns.Contains("DiseaseCode")) dt.Columns.Remove("DiseaseCode");
+                }
+                else
+                {
+                    // No existing rows — build minimal DataTable with only the fields the SP accepts
+                    // Use a fresh retrieve with a dummy approach: call Save with minimal required fields
+                    dt = new System.Data.DataTable();
+                    dt.Columns.Add("TPAProcedureID",   typeof(int));
+                    dt.Columns.Add("ICDCode",          typeof(int));
+                    dt.Columns.Add("SICategery",       typeof(int));
+                    dt.Columns.Add("isGipsa",          typeof(bool));
+                    dt.Columns.Add("isCI",             typeof(bool));
+                    dt.Columns.Add("isPED",            typeof(bool));
+                    dt.Columns.Add("isDayCare",        typeof(bool));
+                    dt.Columns.Add("BillAmount",       typeof(decimal));
+                    dt.Columns.Add("EligibleBillAmount", typeof(decimal));
+                    dt.Columns.Add("PayableAmount",    typeof(decimal));
+                    dt.Columns.Add("DisallowedAmount", typeof(decimal));
+                    dt.Columns.Add("Discount",         typeof(decimal));
+                    dt.Columns.Add("BufferAmount",     typeof(decimal));
+                    dt.Columns.Add("AdditionalAmount", typeof(decimal));
+
+                    var row = dt.NewRow();
+                    row["TPAProcedureID"]    = tpaProcId > 0 ? (object)tpaProcId : DBNull.Value;
+                    row["ICDCode"]           = icdId > 0    ? (object)icdId      : DBNull.Value;
+                    row["SICategery"]        = 69;
+                    row["isGipsa"]           = false;
+                    row["isCI"]              = false;
+                    row["isPED"]             = false;
+                    row["isDayCare"]         = false;
+                    row["BillAmount"]        = 0m;
+                    row["EligibleBillAmount"]= 0m;
+                    row["PayableAmount"]     = 0m;
+                    row["DisallowedAmount"]  = 0m;
+                    row["Discount"]          = 0m;
+                    row["BufferAmount"]      = 0m;
+                    row["AdditionalAmount"]  = 0m;
+                    dt.Rows.Add(row);
+                }
+
+                int result = _objMadicalScrutinyVM.Save_CodingDetails(
+                    claimIdLong, slNoInt, billType, dt,
+                    Convert.ToInt32(Session[SessionValue.UserRegionID]),
+                    out vMessage);
+
+                return Json(new { success = result > 0 || vMessage.Contains("Success"), message = vMessage });
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                return Json(new { success = false, message = ex.Message });
+            }
+        }
+
         [HttpGet]
         public ActionResult GetClaimFieldsForValidation(string claimId)
         {
@@ -7835,7 +7944,7 @@ namespace Enrollment.Controllers
                     if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
-                string age = null;
+                string age          = null;
                 string hospitalName = null;
                 string documentDate = null;
                 string dischargeDate = null;
@@ -7896,8 +8005,8 @@ namespace Enrollment.Controllers
                                 {
                                     if (reader.Read())
                                     {
-                                        documentDate = reader["DocumentDate"] != DBNull.Value ? reader["DocumentDate"].ToString().Trim() : null;
-                                        dischargeDate = reader["DischargeDate"] != DBNull.Value ? reader["DischargeDate"].ToString().Trim() : null;
+                                        documentDate  = reader["DocumentDate"]  != DBNull.Value ? reader["DocumentDate"].ToString().Trim()  : null;
+                                        dischargeDate = reader["DischargeDate"] != DBNull.Value ? reader["DischargeDate"].ToString().Trim()  : null;
                                         break;
                                     }
                                 }
@@ -7907,9 +8016,8 @@ namespace Enrollment.Controllers
                     }
                 }
 
-                return Json(new
-                {
-                    age = age,
+                return Json(new {
+                    age          = age,
                     hospitalName = hospitalName,
                     documentDate = documentDate,
                     dischargeDate = dischargeDate
@@ -7971,9 +8079,9 @@ namespace Enrollment.Controllers
                     if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
-                long memberPolicyId = 0;
-                int siTypeId = 6; // default: individual
-                byte slNo = 1;
+                long   memberPolicyId = 0;
+                int    siTypeId       = 6; // default: individual
+                byte   slNo          = 1;
 
                 using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
@@ -8017,7 +8125,7 @@ namespace Enrollment.Controllers
 
                 // Step 2 — call SpectraUtils DLL GetBSI()
                 var claimIdLong = Convert.ToInt64(claimId.Trim());
-                BSIinfo objBSI = new SpectraUtils.Main().GetBSI(
+                BSIinfo objBSI  = new SpectraUtils.Main().GetBSI(
                     memberPolicyId, siTypeId, claimIdLong, slNo);
 
                 // Step 3 — return as JSON (MaxJsonLength for large utilisation arrays)
@@ -8062,9 +8170,9 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
                 byte[] bytes = System.IO.File.ReadAllBytes(filePath);
-                res.Success = true;
-                res.Message = "Medical bill loaded.";
-                res.Data = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
+                res.Success  = true;
+                res.Message  = "Medical bill loaded.";
+                res.Data     = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -8131,7 +8239,7 @@ namespace Enrollment.Controllers
                     responseBody = await rr.ReadToEndAsync();
 
                 dynamic result = Newtonsoft.Json.JsonConvert.DeserializeObject(responseBody);
-                string jobId = (string)result.jobId;
+                string jobId   = (string)result.jobId;
                 if (string.IsNullOrWhiteSpace(jobId))
                 {
                     res.Success = false;
@@ -8140,7 +8248,7 @@ namespace Enrollment.Controllers
                     return Json(res);
                 }
                 res.Success = true;
-                res.Data = new { jobId = jobId };
+                res.Data    = new { jobId = jobId };
                 return Json(res);
             }
             catch (System.Net.WebException wex)
