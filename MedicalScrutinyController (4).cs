@@ -7991,9 +7991,30 @@ namespace Enrollment.Controllers
                 row["PackageType"]        = pkgType > 0 ? (object)pkgType : DBNull.Value;
                 dt.Rows.Add(row);
 
-                // 5. Save
+                // 5. Get correct BillingType from Claimsdetails
+                int billingTypeFromDb = 0;
+                try
+                {
+                    using (var connBT = new System.Data.SqlClient.SqlConnection(connStr))
+                    {
+                        connBT.Open();
+                        var cmdBT = new System.Data.SqlClient.SqlCommand(
+                            @"SELECT TOP 1 ISNULL(BillingType_P51, 0) 
+                              FROM ClaimsCodingDetails 
+                              WHERE ClaimID=@cid AND SlNo=@sno AND Deleted=0 
+                              ORDER BY CreatedDatetime DESC", connBT);
+                        cmdBT.Parameters.AddWithValue("@cid", claimIdLong);
+                        cmdBT.Parameters.AddWithValue("@sno", slNoInt);
+                        var btScalar = cmdBT.ExecuteScalar();
+                        if (btScalar != null && btScalar != DBNull.Value)
+                            billingTypeFromDb = Convert.ToInt32(btScalar);
+                    }
+                }
+                catch { /* use 0 */ }
+
+                // 6. Save
                 int result = _objMadicalScrutinyVM.Save_CodingDetails(
-                    claimIdLong, slNoInt, 0, dt,
+                    claimIdLong, slNoInt, billingTypeFromDb, dt,
                     Convert.ToInt32(Session[SessionValue.UserRegionID]), out vMessage);
 
                 bool ok = result > 0 || (vMessage != null && vMessage.ToLower().Contains("success"));
