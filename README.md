@@ -1,3 +1,12 @@
+System.NullReferenceException: 'Object reference not set to an instance of an object.'
+
+System.Configuration.ConnectionStringSettingsCollection.this[string].get returned null.
+string connStr = System.Configuration.ConfigurationManager
+    .ConnectionStrings["McarePlus"].ConnectionString;
+
+    [ClaimAI] TPA matched: 502 MICS - Unifocal (Lens Included)-Right score: 100
+Index:16704 [ClaimAI] Coding saved: {success: true, message: 'Saved Successfully'}
+
 [ClaimAI] TPA sample item: {"ID":1,"Name":"Cardiothorasic Surgery and Cardiology Procedures","ParentID":0,"ICDCode":"","PCSCode":"","TreatmentType_P19":66,"Level":1,"ID1":1,"Level1":"Cardiothorasic Surgery and Cardiology Procedures","Level2":"","Level3":"Cardiothorasic Surgery and Cardiology Procedures","Code":"","FHPLCode":"FCT1.0","ParentID1":0,"TreatmentType_P191":66,"Inclusions":"","Exclusions":"","LOS":null,"EffectiveDate":null,"isCI":null,"isDayCare":null,"isPED":false,"isGIPSA":null,"ICDCode1":"","PCSCode1":"","Deleted":false,"TypeofTreatment_P19":null,"PPNCode":null,"PPNDescription":null,"Level4":1,"IsCongenital":null,"InvestigationID":null,"Diagnosis":null}
 
 [ClaimAI] No L3 match for: MICS - Unifocal (Lens Included) - Right — sample keys: ID,Name,ParentID,ICDCode,PCSCode,TreatmentType_P19,Level,ID1,Level1,Level2,Level3,Code,FHPLCode,ParentID1,TreatmentType_P191,Inclusions,Exclusions,LOS,EffectiveDate,isCI,isDayCare,isPED,isGIPSA,ICDCode1,PCSCode1,Deleted,TypeofTreatment_P19,PPNCode,PPNDescription,Level4,IsCongenital,InvestigationID,Diagnosis
