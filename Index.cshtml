@@ -8474,6 +8474,13 @@
                 checkBufferClaim();
             }
 
+            // Debug: log ALL incoming messages
+            window.addEventListener('message', function(event) {
+                if (event.data && typeof event.data === 'object') {
+                    console.log('[ClaimAI] RAW message received:', JSON.stringify(event.data).substring(0, 200));
+                }
+            });
+
             // Listen for postMessage from ClaimAI iframe — sets Aprv Accommodation on Save
             window.addEventListener('message', function(event) {
                 if (!event.data || event.data.source !== 'claimai') return;
@@ -8501,11 +8508,18 @@
                 }
 
                 if (event.data.type === 'setClinicalDetails') {
+                    console.log('[ClaimAI] setClinicalDetails received:', JSON.stringify({
+                        diagnosis: event.data.diagnosis,
+                        procedureHint: event.data.procedureHint,
+                        eligibleAmount: event.data.eligibleAmount,
+                        icdSlotsCount: (event.data.icdSlots||[]).length
+                    }));
                     var diagnosis            = event.data.diagnosis            || '';
                     var lineOfTreatment      = event.data.lineOfTreatment      || '';
                     var presentingComplaint  = event.data.presentingComplaint  || '';
                     var hospTreatmentKeyword = event.data.hospTreatmentKeyword || '';
                     var icdSlots             = event.data.icdSlots             || [];
+                    var eligibleAmount       = event.data.eligibleAmount       || 0;
 
                     // Probable Diagnosis → txtProbableDiagnosis
                     if (diagnosis) {
