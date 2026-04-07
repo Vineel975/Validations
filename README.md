@@ -1,5 +1,12 @@
 message
 : 
+"Error While Inserting Data into Staging TableTrying to pass a table-valued parameter with 34 column(s) where the corresponding user-defined table type requires 35 column(s)."
+success
+: 
+false
+
+message
+: 
 "Error While Inserting Data into Staging TableThe type of column 'TPAProcedureID' is not supported.  The type is 'Object'"
 success
 : 
