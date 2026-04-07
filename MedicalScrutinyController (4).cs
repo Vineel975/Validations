@@ -7861,8 +7861,8 @@ namespace Enrollment.Controllers
                                 ISNULL(p.PCSCode,'') AS PCS,
                                 ISNULL(p.InvestigationID,0) AS PCSID,
                                 ISNULL(p.PPNDescription,'') AS PPND
-                            FROM MasterData.TPAProcedures p
-                            LEFT JOIN MasterData.TPAProcedures g ON g.ID=p.ParentID
+                            FROM TPAProcedures p
+                            LEFT JOIN TPAProcedures g ON g.ID=p.ParentID
                             WHERE p.ID=@id AND p.Deleted=0", conn);
                         cmdP.Parameters.AddWithValue("@id", tpaProcId);
                         using (var r = cmdP.ExecuteReader())
@@ -7890,7 +7890,7 @@ namespace Enrollment.Controllers
                         while (code.Length > 0 && icdNumericId == 0)
                         {
                             var cmdI = new System.Data.SqlClient.SqlCommand(
-                                "SELECT TOP 1 ID FROM MasterData.ICD10 WHERE DiseaseCode=@dc AND Deleted=0 ORDER BY Level DESC", conn);
+                                "SELECT TOP 1 ID FROM ICD10 WHERE DiseaseCode=@dc AND Deleted=0 ORDER BY Level DESC", conn);
                             cmdI.Parameters.AddWithValue("@dc", code);
                             var sc = cmdI.ExecuteScalar();
                             if (sc != null && sc != DBNull.Value) { icdNumericId = Convert.ToInt32(sc); break; }
@@ -7906,7 +7906,7 @@ namespace Enrollment.Controllers
 
                     // 3. SICategory for Primary
                     var cmdCat = new System.Data.SqlClient.SqlCommand(
-                        "SELECT TOP 1 ID FROM MasterData.SumInsuredCategory WHERE Name LIKE '%Primary%' AND Deleted=0", conn);
+                        "SELECT TOP 1 ID FROM SumInsuredCategory WHERE Name LIKE '%Primary%' AND Deleted=0", conn);
                     var catSc = cmdCat.ExecuteScalar();
                     if (catSc != null && catSc != DBNull.Value) siCategory = Convert.ToInt32(catSc);
                 }
