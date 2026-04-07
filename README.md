@@ -1,1 +1,1 @@
-[ClaimAI] Coding saved: {success: false, message: "Invalid object name 'MasterData.TPAProcedures'."}
+[ClaimAI] Coding saved: {success: false, message: "Invalid object name 'SumInsuredCategory'."}
