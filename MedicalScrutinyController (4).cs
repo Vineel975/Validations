@@ -7909,6 +7909,7 @@ namespace Enrollment.Controllers
 
                 // 4. Build exact 35-column DataTable
                 var dt = new System.Data.DataTable();
+                var dt = new System.Data.DataTable();
                 dt.Columns.Add("TPAProcedureID",      typeof(int));
                 dt.Columns.Add("TPALevel1",           typeof(int));
                 dt.Columns.Add("TPALevel2",           typeof(int));
@@ -7920,9 +7921,9 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("isDayCare",           typeof(bool));
                 dt.Columns.Add("isCI",                typeof(bool));
                 dt.Columns.Add("isPED",               typeof(bool));
-                dt.Columns.Add("TypeOfAnesthesiaID",  typeof(int));
+                dt.Columns.Add("TypeOfAnesthesiaID",  typeof(byte));
                 dt.Columns.Add("Exclusions",          typeof(string));
-                dt.Columns.Add("SurgeryDate",         typeof(string));
+                dt.Columns.Add("SurgeryDate",         typeof(DateTime));
                 dt.Columns.Add("BillAmount",          typeof(decimal));
                 dt.Columns.Add("DisallowedAmount",    typeof(decimal));
                 dt.Columns.Add("DisallowedReasonIDs", typeof(string));
@@ -7933,26 +7934,26 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("Copay",               typeof(decimal));
                 dt.Columns.Add("Remarks",             typeof(string));
                 dt.Columns.Add("ICDCode",             typeof(int));
-                dt.Columns.Add("PCSCode",             typeof(int));
+                dt.Columns.Add("PCSCode",             typeof(string));
                 dt.Columns.Add("PCSDescription",      typeof(string));
                 dt.Columns.Add("EligibleAmount",      typeof(decimal));
                 dt.Columns.Add("AdditionalAmount",    typeof(decimal));
                 dt.Columns.Add("BPCoverageLimit",     typeof(decimal));
+                dt.Columns.Add("ProcessHTML",         typeof(string));
                 dt.Columns.Add("Overridepackage",     typeof(bool));
                 dt.Columns.Add("Overridesuminsured",  typeof(bool));
-                dt.Columns.Add("PolicySublimit",      typeof(bool));
-                dt.Columns.Add("AlimentExpression",   typeof(string));
+                dt.Columns.Add("PolicySublimit",      typeof(decimal));
+                dt.Columns.Add("AlimentExpression",   typeof(int));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
-                dt.Columns.Add("PackageType",         typeof(int));
 
                 var row = dt.NewRow();
-                row["TPAProcedureID"]      = tpaProcId > 0   ? (object)tpaProcId   : DBNull.Value;
-                row["TPALevel1"]           = tpaLevel1Id > 0 ? (object)tpaLevel1Id : DBNull.Value;
-                row["TPALevel2"]           = tpaLevel2Id > 0 ? (object)tpaLevel2Id : DBNull.Value;
-                row["TPALevel3"]           = tpaProcId > 0   ? (object)tpaProcId   : DBNull.Value;
+                row["TPAProcedureID"]      = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
+                row["TPALevel1"]           = tpaLevel1Id > 0  ? (object)tpaLevel1Id  : DBNull.Value;
+                row["TPALevel2"]           = tpaLevel2Id > 0  ? (object)tpaLevel2Id  : DBNull.Value;
+                row["TPALevel3"]           = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
                 row["PackageRate"]         = 0m;
                 row["PackageRatio"]        = DBNull.Value;
-                row["TreatementTypeID_19"] = treatTypeId > 0 ? (object)treatTypeId : DBNull.Value;
+                row["TreatementTypeID_19"] = treatTypeId > 0  ? (object)treatTypeId  : DBNull.Value;
                 row["isGipsa"]             = true;
                 row["isDayCare"]           = false;
                 row["isCI"]               = false;
@@ -7969,18 +7970,18 @@ namespace Enrollment.Controllers
                 row["Discount"]            = 0m;
                 row["Copay"]              = DBNull.Value;
                 row["Remarks"]            = DBNull.Value;
-                row["ICDCode"]            = icdNumericId > 0 ? (object)icdNumericId : DBNull.Value;
-                row["PCSCode"]            = pcsNumericId > 0 ? (object)pcsNumericId : DBNull.Value;
-                row["PCSDescription"]     = !string.IsNullOrEmpty(pcsDesc) ? (object)pcsDesc : DBNull.Value;
+                row["ICDCode"]            = icdNumericId > 0  ? (object)icdNumericId  : DBNull.Value;
+                row["PCSCode"]            = !string.IsNullOrEmpty(pcsCodeStr) ? (object)pcsCodeStr : DBNull.Value;
+                row["PCSDescription"]     = !string.IsNullOrEmpty(pcsDesc)    ? (object)pcsDesc    : DBNull.Value;
                 row["EligibleAmount"]     = eligibleAmt;
                 row["AdditionalAmount"]   = DBNull.Value;
                 row["BPCoverageLimit"]    = DBNull.Value;
+                row["ProcessHTML"]        = DBNull.Value;
                 row["Overridepackage"]    = false;
                 row["Overridesuminsured"] = false;
-                row["PolicySublimit"]     = false;
+                row["PolicySublimit"]     = DBNull.Value;
                 row["AlimentExpression"]  = DBNull.Value;
                 row["Alimentpower"]       = DBNull.Value;
-                row["PackageType"]        = pkgType > 0 ? (object)pkgType : DBNull.Value;
                 dt.Rows.Add(row);
 
                 // 5. Save
