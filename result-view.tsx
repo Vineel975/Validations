@@ -630,7 +630,11 @@ export function ResultView({
         : null;
 
     const procedureHint  = `${diagnosis ?? ""} ${lineOfTreatment ?? ""}`.toLowerCase();
-    const eligibleAmount = claimCalculation?.insurerPayable ?? 0;
+    // Total Amount Approved = finalInsurerPayable (after BSI cap) or insurerPayable
+    const eligibleAmount = claimCalculation?.finalInsurerPayable
+                        ?? displayAnalysis?.finalInsurerPayable
+                        ?? claimCalculation?.insurerPayable
+                        ?? 0;
     // Hospital bill — total amount extracted from hospital bill document
     // Try hospitalBillAfterDiscount first, then totalAmount from PDF extraction
     const packageAmount  = claimCalculation?.hospitalBillAfterDiscount
