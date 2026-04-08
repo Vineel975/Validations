@@ -8534,6 +8534,12 @@
                         $('#txtPresentComplaint').val(presentingComplaint).trigger('change');
                     }
 
+                    // Processing Remarks → txtDoctorRemarks
+                    var processingRemarks = event.data.processingRemarks || '';
+                    if (processingRemarks) {
+                        $('#txtDoctorRemarks').val(processingRemarks).trigger('change');
+                    }
+
                     // Probable Line of Treatment → ddlHospTreatmentType
                     if (hospTreatmentKeyword) {
                         var $hospDdl = $('#ddlHospTreatmentType');
@@ -8568,6 +8574,7 @@
                                 probableDiagnosis:       $('#txtProbableDiagnosis').val(),
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
+                                processingRemarks:       $('#txtDoctorRemarks').val(),
                                 hospTreatmentTypeId:     hospTypeId,
                                 approvedFacilityId:      approvedFacId
                             },
