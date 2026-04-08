@@ -7687,6 +7687,7 @@ namespace Enrollment.Controllers
             string probableLineOfTreatment,
             string presentComplaint,
             string processingRemarks,
+            string doctorNotes,
             string hospTreatmentTypeId,
             string approvedFacilityId = null)
         {
@@ -7767,6 +7768,11 @@ namespace Enrollment.Controllers
                         {
                             setClauses.Add("ExecutiveNotes = @ExecutiveNotes");
                             cmd.Parameters.AddWithValue("@ExecutiveNotes", processingRemarks.Trim());
+                        }
+                        if (!string.IsNullOrWhiteSpace(doctorNotes))
+                        {
+                            setClauses.Add("DoctorNotes = @DoctorNotes");
+                            cmd.Parameters.AddWithValue("@DoctorNotes", doctorNotes.Trim());
                         }
                         if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
                         {
@@ -8109,11 +8115,29 @@ namespace Enrollment.Controllers
                     }
                 }
 
+                // Doctor Notes from Claimsdetails
+                string doctorNotes = null;
+                using (var conn2 = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn2.Open();
+                    using (var cmd = conn2.CreateCommand())
+                    {
+                        cmd.CommandText = @"SELECT TOP 1 DoctorNotes FROM Claimsdetails
+                                            WHERE ClaimID = @ClaimID AND ISNULL(Deleted,0) = 0
+                                            ORDER BY SlNo DESC";
+                        cmd.Parameters.AddWithValue("@ClaimID", numericClaimId);
+                        var scalar = cmd.ExecuteScalar();
+                        if (scalar != null && scalar != DBNull.Value)
+                            doctorNotes = scalar.ToString().Trim();
+                    }
+                }
+
                 return Json(new {
                     age          = age,
                     hospitalName = hospitalName,
                     documentDate = documentDate,
-                    dischargeDate = dischargeDate
+                    dischargeDate = dischargeDate,
+                    doctorNotes  = doctorNotes
                 }, JsonRequestBehavior.AllowGet);
             }
             catch (Exception ex)
