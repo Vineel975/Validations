@@ -1,3 +1,27 @@
+DECLARE @TableName NVARCHAR(128) = 'YourTableName';
+DECLARE @SearchValue NVARCHAR(100) = 'YourSearchText';
+
+DECLARE @SQL NVARCHAR(MAX) = '';
+
+SELECT @SQL = STRING_AGG(
+    'SELECT ''' + COLUMN_NAME + ''' AS ColumnName 
+     FROM ' + @TableName + ' 
+     WHERE [' + COLUMN_NAME + '] LIKE ''%' + @SearchValue + '%''',
+    ' UNION ALL '
+)
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = @TableName
+AND DATA_TYPE IN ('varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext');
+
+EXEC(@SQL);
+
+
+
+
+
+
+
+
 SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
 WHERE TABLE_NAME = 'Claimsdetails'
 AND COLUMN_NAME LIKE '%Doctor%' 
