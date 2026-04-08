@@ -651,6 +651,7 @@ export function ResultView({
 
     // Send clinical details immediately — don't wait for ICD fetch
     if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword || processingRemarks.trim()) {
+      console.log("[ClaimAI] sending setClinicalDetails, processingRemarks:", processingRemarks.trim());
       window.parent.postMessage(
         {
           source:               "claimai",
