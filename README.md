@@ -1,18 +1,4 @@
--- Step 1: Get MemberPolicyID
-SELECT TOP 1 MemberPolicyID FROM Claims WHERE ID = 26040206200
-
--- Step 2: Find other claims for same member
-SELECT TOP 10 cl.ID, cl.MemberPolicyID, cl.DateofAdmission, cl.ProbableDiagnosis
-FROM Claims cl
-WHERE cl.MemberPolicyID = (SELECT TOP 1 MemberPolicyID FROM Claims WHERE ID = 26040206200)
-AND cl.ID != 26040206200
-AND cl.Deleted = 0
-
-
--- Find a MemberPolicyID that has multiple claims
-SELECT TOP 5 MemberPolicyID, COUNT(*) AS ClaimCount
-FROM Claims
-WHERE Deleted = 0
-GROUP BY MemberPolicyID
-HAVING COUNT(*) > 1
-ORDER BY ClaimCount DESC
+1. Presenting complaint should come from the medical document if there is any. and on click of save it should get populated into the field.
+2. Processing remarks tab should be there just like presenting complaint and the matter typed there should be saved in Processing remarks tab inside hospitalization details.
+3. Doctor notes separate tab should be there and it is getting populated somewhere from the code and db. find that and populate it on the top -> just bring that section which is there in claim actions -> adjudication process -> doctor notes , bring it to the top. when we type anything in this box, should reflect in the doctor notes box again.
+4. Bill Amount should be adjuetsed. keep all fields zero , in othere tab add BillAmount = Medical Bill extracted , deductions = max(Medical Bill - Tariff bill,0) and give deductions reason = Tariff exceeded.
