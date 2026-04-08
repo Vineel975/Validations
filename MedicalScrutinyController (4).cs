@@ -7765,8 +7765,8 @@ namespace Enrollment.Controllers
                         }
                         if (!string.IsNullOrWhiteSpace(processingRemarks))
                         {
-                            setClauses.Add("DoctorNotes = @DoctorNotes");
-                            cmd.Parameters.AddWithValue("@DoctorNotes", processingRemarks.Trim());
+                            setClauses.Add("ExecutiveNotes = @ExecutiveNotes");
+                            cmd.Parameters.AddWithValue("@ExecutiveNotes", processingRemarks.Trim());
                         }
                         if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
                         {
