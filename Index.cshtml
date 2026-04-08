@@ -8536,8 +8536,10 @@
 
                     // Processing Remarks → txtDoctorRemarks
                     var processingRemarks = event.data.processingRemarks || '';
+                    console.log('[ClaimAI] processingRemarks received:', processingRemarks);
                     if (processingRemarks) {
                         $('#txtDoctorRemarks').val(processingRemarks).trigger('change');
+                        console.log('[ClaimAI] txtDoctorRemarks set to:', $('#txtDoctorRemarks').val());
                     }
 
                     // Probable Line of Treatment → ddlHospTreatmentType
