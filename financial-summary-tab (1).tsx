@@ -290,15 +290,20 @@ export function FinancialSummaryTab({
   const [prevClaimsExpanded, setPrevExpanded] = useState(false);
 
   useEffect(() => {
-    if (!claimId) return;
+    console.log("[prev-claims UI] claimId:", claimId, "memberPolicyId:", memberPolicyId);
+    if (!claimId) { console.log("[prev-claims UI] no claimId, skipping fetch"); return; }
     setPrevLoading(true);
-    // If memberPolicyId not in spectraFields (old job), API will look it up from claimId
     const params = new URLSearchParams({ claimId });
     if (memberPolicyId) params.set("memberPolicyId", memberPolicyId);
-    fetch(`/api/previous-claims?${params.toString()}`)
+    const url = `/api/previous-claims?${params.toString()}`;
+    console.log("[prev-claims UI] fetching:", url);
+    fetch(url)
       .then((r) => r.json())
-      .then((data) => { setPrevClaims(data.claims ?? []); setPrevError(null); })
-      .catch((e) => setPrevError(String(e)))
+      .then((data) => {
+        console.log("[prev-claims UI] got", data.claims?.length ?? 0, "claims");
+        setPrevClaims(data.claims ?? []); setPrevError(null);
+      })
+      .catch((e) => { console.error("[prev-claims UI] fetch error:", e); setPrevError(String(e)); })
       .finally(() => setPrevLoading(false));
   }, [memberPolicyId, claimId]);
 
