@@ -7260,6 +7260,7 @@
                     if (fields.documentDate) spectraFields.documentDate  = fields.documentDate;
                     if (fields.dischargeDate && !spectraFields.dischargeDate)
                                              spectraFields.dischargeDate = fields.dischargeDate;
+                    if (fields.doctorNotes)  spectraFields.doctorNotes   = fields.doctorNotes;
                 }
             } catch(e) {
                 console.warn('[ClaimAI] GetClaimFieldsForValidation failed:', e);
@@ -7291,6 +7292,9 @@
             // MemberPolicyID and SlNo — needed for previous claims lookup
             spectraFields.memberPolicyId = $('#hdnMemberPolicyID').val() || '';
             spectraFields.claimSlNo      = $('#hdnClaimSlNo').val() || '1';
+
+            // Doctor Notes — pre-populate iframe from Spectra txtDoctorRemarks
+            spectraFields.doctorNotes = $('#txtDoctorRemarks').val() || '';
 
             // Only add spectraFields if at least one value was found
             if (Object.keys(spectraFields).length > 0) {
@@ -8540,6 +8544,12 @@
                         $('#txtExecutiveNotes').val(processingRemarks).trigger('change');
                     }
 
+                    // Doctor Notes → txtDoctorRemarks
+                    var doctorNotes = event.data.doctorNotes || '';
+                    if (doctorNotes) {
+                        $('#txtDoctorRemarks').val(doctorNotes).trigger('change');
+                    }
+
                     // Probable Line of Treatment → ddlHospTreatmentType
                     if (hospTreatmentKeyword) {
                         var $hospDdl = $('#ddlHospTreatmentType');
@@ -8575,6 +8585,7 @@
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
                                 processingRemarks:       $('#txtExecutiveNotes').val(),
+                                doctorNotes:             $('#txtDoctorRemarks').val(),
                                 hospTreatmentTypeId:     hospTypeId,
                                 approvedFacilityId:      approvedFacId
                             },
@@ -8599,6 +8610,12 @@
                             }
                         });
                     }, 500);
+                }
+
+                // Doctor Notes sync from iframe
+                if (event.data.type === 'setDoctorNotes') {
+                    var doctorNotesVal = event.data.doctorNotes || '';
+                    $('#txtDoctorRemarks').val(doctorNotesVal).trigger('change');
                 }
 
                 // ICD slots arrive after async fetch — triggers coding save
