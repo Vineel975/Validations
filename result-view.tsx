@@ -165,6 +165,7 @@ export function ResultView({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [presentingComplaint, setPresentingComplaint] = useState("");
+  const [processingRemarks,   setProcessingRemarks]   = useState("");
   const [benefitPlanSnapshot, setBenefitPlanSnapshot] = useState<Record<string, unknown> | null>(null);
   const changeLogRef = useRef(new ChangeLog());
   const pendingChangesRef = useRef(new ChangeLog()); // Track pending changes separately
@@ -649,7 +650,7 @@ export function ResultView({
                         ?? (displayAnalysis?.totalAmount?.value ?? 0);
 
     // Send clinical details immediately — don't wait for ICD fetch
-    if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword) {
+    if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword || processingRemarks.trim()) {
       window.parent.postMessage(
         {
           source:               "claimai",
@@ -657,6 +658,7 @@ export function ResultView({
           diagnosis:            diagnosis             ?? "",
           lineOfTreatment:      lineOfTreatment       ?? "",
           presentingComplaint:  presentingComplaint.trim(),
+          processingRemarks:    processingRemarks.trim(),
           hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
           icdSlots:             [],
           procedureHint:        procedureHint,
@@ -1161,6 +1163,18 @@ export function ResultView({
                     value={presentingComplaint}
                     onChange={(e) => setPresentingComplaint(e.target.value)}
                     placeholder="Enter presenting complaint..."
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 resize-none"
+                  />
+                </div>
+                <div className="mt-4 space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Processing Remarks
+                  </label>
+                  <textarea
+                    value={processingRemarks}
+                    onChange={(e) => setProcessingRemarks(e.target.value)}
+                    placeholder="Enter processing remarks..."
                     rows={3}
                     className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 resize-none"
                   />
