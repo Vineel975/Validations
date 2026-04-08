@@ -7686,6 +7686,7 @@ namespace Enrollment.Controllers
             string probableDiagnosis,
             string probableLineOfTreatment,
             string presentComplaint,
+            string processingRemarks,
             string hospTreatmentTypeId,
             string approvedFacilityId = null)
         {
@@ -7761,6 +7762,11 @@ namespace Enrollment.Controllers
                         {
                             setClauses.Add("PresentComplaint = @PresentComplaint");
                             cmd.Parameters.AddWithValue("@PresentComplaint", presentComplaint.Trim());
+                        }
+                        if (!string.IsNullOrWhiteSpace(processingRemarks))
+                        {
+                            setClauses.Add("DoctorNotes = @DoctorNotes");
+                            cmd.Parameters.AddWithValue("@DoctorNotes", processingRemarks.Trim());
                         }
                         if (!string.IsNullOrWhiteSpace(hospTreatmentTypeId))
                         {
