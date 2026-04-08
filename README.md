@@ -1,3 +1,11 @@
+SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'Claimsdetails'
+AND COLUMN_NAME LIKE '%Doctor%' 
+   OR COLUMN_NAME LIKE '%Remark%'
+   OR COLUMN_NAME LIKE '%Note%'
+   OR COLUMN_NAME LIKE '%Process%'
+ORDER BY COLUMN_NAME
+
 [ClaimAI] sending setClinicalDetails, processingRemarks: Hello There
 Index:16356 [ClaimAI] processingRemarks received: Hello There
 Index:16359 [ClaimAI] txtDoctorRemarks set to: Hello There
