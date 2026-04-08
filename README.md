@@ -1,3 +1,8 @@
+[ClaimAI] sending setClinicalDetails, processingRemarks: Hello There
+Index:16356 [ClaimAI] processingRemarks received: Hello There
+Index:16359 [ClaimAI] txtDoctorRemarks set to: Hello There
+
+
 1. Presenting complaint should come from the medical document if there is any. and on click of save it should get populated into the field.
 2. Processing remarks tab should be there just like presenting complaint and the matter typed there should be saved in Processing remarks tab inside hospitalization details.
 3. Doctor notes separate tab should be there and it is getting populated somewhere from the code and db. find that and populate it on the top -> just bring that section which is there in claim actions -> adjudication process -> doctor notes , bring it to the top. when we type anything in this box, should reflect in the doctor notes box again.
