@@ -8534,12 +8534,10 @@
                         $('#txtPresentComplaint').val(presentingComplaint).trigger('change');
                     }
 
-                    // Processing Remarks → txtDoctorRemarks
+                    // Processing Remarks → txtExecutiveNotes
                     var processingRemarks = event.data.processingRemarks || '';
-                    console.log('[ClaimAI] processingRemarks received:', processingRemarks);
                     if (processingRemarks) {
-                        $('#txtDoctorRemarks').val(processingRemarks).trigger('change');
-                        console.log('[ClaimAI] txtDoctorRemarks set to:', $('#txtDoctorRemarks').val());
+                        $('#txtExecutiveNotes').val(processingRemarks).trigger('change');
                     }
 
                     // Probable Line of Treatment → ddlHospTreatmentType
@@ -8576,7 +8574,7 @@
                                 probableDiagnosis:       $('#txtProbableDiagnosis').val(),
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
-                                processingRemarks:       $('#txtDoctorRemarks').val(),
+                                processingRemarks:       $('#txtExecutiveNotes').val(),
                                 hospTreatmentTypeId:     hospTypeId,
                                 approvedFacilityId:      approvedFacId
                             },
