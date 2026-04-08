@@ -1911,12 +1911,12 @@ export async function getPreviousClaims(claimId: string, memberPolicyId?: string
 }[]> {
   const db = await getPool();
 
-  // Look up memberPolicyId if not provided
+  // Get MemberPolicyID from Claims table (Claims.ID = ClaimID)
   let mpId = memberPolicyId ? parseInt(memberPolicyId) : 0;
   if (!mpId) {
     const lookup = await db.request()
       .input("claimId", mssql.BigInt, parseInt(claimId))
-      .query("SELECT TOP 1 MemberPolicyID FROM Claimsdetails WHERE ClaimID=@claimId AND Deleted=0");
+      .query("SELECT TOP 1 MemberPolicyID FROM Claims WHERE ID = @claimId");
     if (lookup.recordset.length > 0)
       mpId = Number(lookup.recordset[0].MemberPolicyID);
   }
@@ -1928,26 +1928,31 @@ export async function getPreviousClaims(claimId: string, memberPolicyId?: string
     .input("claimId",        mssql.BigInt, parseInt(claimId))
     .query(`
       SELECT TOP 10
-        cd.ClaimID, cd.SlNo,
-        cd.DateOfAdmission, cd.DateOfDischarge,
-        cd.Diagnosis, cd.PlanOfTreatment,
-        cd.BillAmount, cd.SanctionedAmount,
-        ISNULL(p.ProviderName, '')  AS HospitalName,
-        ISNULL(cs.StageName,   '')  AS Status
-      FROM Claimsdetails cd
-      LEFT JOIN MasterData.Providers p   ON p.ProviderID = cd.ProviderID
-      LEFT JOIN MasterData.ClaimStage cs ON cs.StageID   = cd.StageID
-      WHERE cd.MemberPolicyID = @memberPolicyId
-        AND cd.ClaimID        != @claimId
-        AND cd.Deleted        = 0
-      ORDER BY cd.DateOfAdmission DESC
+        cl.ID                                AS ClaimID,
+        ISNULL(cd.Slno, 1)                   AS SlNo,
+        cl.DateofAdmission,
+        cl.DateofDischarge,
+        cl.ProbableDiagnosis                 AS Diagnosis,
+        cd.PlanOfTreatment,
+        cl.ClaimedAmount                     AS BillAmount,
+        cd.SanctionedAmount,
+        ISNULL(p.Name,  '')                  AS HospitalName,
+        ISNULL(cs.Name, '')                  AS Status
+      FROM Claims cl
+      LEFT JOIN Claimsdetails cd ON cd.ClaimID = cl.ID AND cd.Deleted = 0
+      LEFT JOIN Provider p       ON p.ID       = cl.ProviderID
+      LEFT JOIN Claimstage cs    ON cs.ID      = cl.StageID
+      WHERE cl.MemberPolicyID = @memberPolicyId
+        AND cl.ID             != @claimId
+        AND cl.Deleted        = 0
+      ORDER BY cl.DateofAdmission DESC
     `);
 
   return result.recordset.map((row: Record<string, unknown>) => ({
     claimId:        String(row.ClaimID),
     slNo:           Number(row.SlNo),
-    admissionDate:  row.DateOfAdmission ? new Date(row.DateOfAdmission as string).toLocaleDateString("en-IN") : null,
-    dischargeDate:  row.DateOfDischarge ? new Date(row.DateOfDischarge as string).toLocaleDateString("en-IN") : null,
+    admissionDate:  row.DateofAdmission ? new Date(row.DateofAdmission as string).toLocaleDateString("en-IN") : null,
+    dischargeDate:  row.DateofDischarge ? new Date(row.DateofDischarge as string).toLocaleDateString("en-IN") : null,
     diagnosis:      (row.Diagnosis       as string | null) ?? null,
     treatment:      (row.PlanOfTreatment as string | null) ?? null,
     billAmount:     row.BillAmount       != null ? Number(row.BillAmount)       : null,
