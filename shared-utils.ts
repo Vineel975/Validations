@@ -43,12 +43,18 @@ export function normalizeMedicalAdmissibility(
       item.doctorNotes === null || item.doctorNotes === undefined
         ? ""
         : item.doctorNotes,
+    presentingComplaint:
+      item.presentingComplaint === null || item.presentingComplaint === undefined
+        ? ""
+        : item.presentingComplaint,
     conditionTests: normalizedConditionTests,
   };
 
+  // Return null only if ALL meaningful fields are empty
   if (
     !normalized.diagnosis &&
     !normalized.doctorNotes &&
+    !normalized.presentingComplaint &&
     !normalized.conditionTests.length
   ) {
     return null;
