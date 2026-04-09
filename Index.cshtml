@@ -8548,6 +8548,7 @@
 
                     // Doctor Notes — store in closure var (DOM may not exist if Notes tab not opened)
                     var doctorNotes = event.data.doctorNotes || '';
+                    console.log('[ClaimAI] doctorNotes from postMessage:', doctorNotes);
                     if (doctorNotes) {
                         window._claimAI_doctorNotes = doctorNotes;
                         // Set in DOM only if element exists (Notes tab opened)
@@ -8582,6 +8583,7 @@
                         // then fall back to current dropdown value
                         var approvedFacId = window._claimAI_approvedFacilityId || $('#ddlApprovedFacility').val() || '';
 
+                        console.log('[ClaimAI] AJAX save doctorNotes:', window._claimAI_doctorNotes);
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
                             type: 'POST',
