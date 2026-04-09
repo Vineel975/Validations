@@ -7773,7 +7773,9 @@ namespace Enrollment.Controllers
 
                 int userRegionId     = Convert.ToInt32(Session[SessionValue.UserRegionID]);
                 int regionId         = Convert.ToInt32(Session[SessionValue.RegionID]);
-                int roleId           = Convert.ToInt32(Session[SessionValue.RoleID] ?? "0");
+                int roleId           = Session[SessionValue.UserRoleID] != null
+                                       ? Convert.ToInt32(Session[SessionValue.UserRoleID])
+                                       : 20;
                 System.Data.DataTable dtDisc  = (System.Data.DataTable)(Session["ClaimDiscount"]);
                 System.Data.DataTable dtTariffDisc = new System.Data.DataTable();
                 dtTariffDisc.Columns.Add("ServiceID",      typeof(int));
