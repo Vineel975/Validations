@@ -1,17 +1,3 @@
-COLUMN_NAME
---------------------------------------------------------------------------------------------------------------------------------
-ID
-ClaimID
-Slno
-ServiceID
-BillSlNo
-BillNo
-BillDate
-BillAmount
-DeductionAmount
-Deleted
-CreatedUserRegionID
-Createddatetime
-DeletedUserRegionID
-DeletedDatetime
-MIG_ServiceID
+SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
+WHERE TABLE_NAME LIKE '%Service%' OR TABLE_NAME LIKE '%Billing%'
+ORDER BY TABLE_NAME
