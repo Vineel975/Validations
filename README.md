@@ -1,10 +1,12 @@
--- See exact JSON that BillingPartialView sends - check an existing saved row
-SELECT TOP 1 ServiceID, BillNo, BillDate, BillAmount, DeductionAmount
-FROM ClaimsBillDetails 
-WHERE ClaimID = 26040206200 AND Deleted = 0
-ORDER BY ID DESC
+ServiceID   BillNo                    BillDate                BillAmount            DeductionAmount
+----------- ------------------------- ----------------------- --------------------- ---------------------
+6           123                       2026-04-09 00:00:00.000 134.00                0.00
 
--- Check if deductions are stored separately
-SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
-WHERE TABLE_NAME LIKE '%Deduct%'
-ORDER BY TABLE_NAME
+
+
+TABLE_NAME
+--------------------------------------------------------------------------------------------------------------------------------
+ClaimDeductionDetails
+Mst_DeductionReasons
+
+(2 rows affected)
