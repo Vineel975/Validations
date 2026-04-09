@@ -7737,17 +7737,19 @@ namespace Enrollment.Controllers
 
                 // BillDetails - only Others row
                 var dtBillDetails = new System.Data.DataTable();
-                dtBillDetails.Columns.Add("ServiceID",  typeof(int));
-                dtBillDetails.Columns.Add("BillSlNo",   typeof(int));
-                dtBillDetails.Columns.Add("BillNo",     typeof(string));
-                dtBillDetails.Columns.Add("BillDate",   typeof(string));
-                dtBillDetails.Columns.Add("BillAmount", typeof(decimal));
+                dtBillDetails.Columns.Add("ServiceID",       typeof(int));
+                dtBillDetails.Columns.Add("BillSlNo",        typeof(byte));
+                dtBillDetails.Columns.Add("BillNo",          typeof(string));
+                dtBillDetails.Columns.Add("BillDate",        typeof(DateTime));
+                dtBillDetails.Columns.Add("BillAmount",      typeof(decimal));
+                dtBillDetails.Columns.Add("DeductionAmount", typeof(decimal));
                 var billRow = dtBillDetails.NewRow();
-                billRow["ServiceID"]  = 6;
-                billRow["BillSlNo"]   = 1;
-                billRow["BillNo"]     = "AI";
-                billRow["BillDate"]   = DateTime.Now.ToString("dd-MMM-yyyy");
-                billRow["BillAmount"] = hospAmt;
+                billRow["ServiceID"]       = 6;
+                billRow["BillSlNo"]        = (byte)1;
+                billRow["BillNo"]          = "AI";
+                billRow["BillDate"]        = DateTime.Now.Date;
+                billRow["BillAmount"]      = hospAmt;
+                billRow["DeductionAmount"] = deductionAmt;
                 dtBillDetails.Rows.Add(billRow);
 
                 // DeductionDetails - only if deduction > 0, reason 3 = Restricted to agreed tariff
