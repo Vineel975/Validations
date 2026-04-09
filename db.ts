@@ -1913,19 +1913,15 @@ export async function getPreviousClaims(claimId: string, memberPolicyId?: string
 
   // Get MemberPolicyID from Claims table (Claims.ID = ClaimID)
   let mpId = memberPolicyId ? parseInt(memberPolicyId) : 0;
-  console.log("[prev-claims] claimId:", claimId, "memberPolicyId param:", memberPolicyId, "mpId init:", mpId);
-
   if (!mpId) {
     const lookup = await db.request()
       .input("claimId", mssql.BigInt, parseInt(claimId))
       .query("SELECT TOP 1 MemberPolicyID FROM Claims WHERE ID = @claimId");
-    console.log("[prev-claims] lookup rows:", lookup.recordset.length, lookup.recordset[0] ?? "none");
     if (lookup.recordset.length > 0)
       mpId = Number(lookup.recordset[0].MemberPolicyID);
   }
 
-  console.log("[prev-claims] resolved mpId:", mpId);
-  if (!mpId) { console.log("[prev-claims] no mpId found, returning []"); return []; }
+  if (!mpId) return [];
 
   const result = await db.request()
     .input("memberPolicyId", mssql.BigInt, mpId)
@@ -1952,7 +1948,6 @@ export async function getPreviousClaims(claimId: string, memberPolicyId?: string
       ORDER BY cl.DateofAdmission DESC
     `);
 
-  console.log("[prev-claims] query returned", result.recordset.length, "rows");
   return result.recordset.map((row: Record<string, unknown>) => ({
     claimId:        String(row.ClaimID),
     slNo:           Number(row.SlNo),
@@ -1965,4 +1960,16 @@ export async function getPreviousClaims(claimId: string, memberPolicyId?: string
     hospital:       (row.HospitalName    as string) || null,
     status:         (row.Status          as string) || null,
   }));
+}
+
+export async function getDoctorNotes(claimId: string): Promise<string | null> {
+  const db = await getPool();
+  const result = await db.request()
+    .input("claimId", mssql.BigInt, parseInt(claimId))
+    .query(`SELECT TOP 1 DoctorNotes FROM Claimsdetails
+            WHERE ClaimID = @claimId AND ISNULL(Deleted,0) = 0
+            ORDER BY SlNo DESC`);
+  if (result.recordset.length === 0) return null;
+  const val = result.recordset[0].DoctorNotes;
+  return val ? String(val).trim() : null;
 }
