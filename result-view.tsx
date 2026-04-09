@@ -166,6 +166,7 @@ export function ResultView({
   const [isSaving, setIsSaving] = useState(false);
   const [presentingComplaint, setPresentingComplaint] = useState("");
   const [processingRemarks,   setProcessingRemarks]   = useState("");
+  const [doctorNotes,         setDoctorNotes]         = useState("");
   const [benefitPlanSnapshot, setBenefitPlanSnapshot] = useState<Record<string, unknown> | null>(null);
   const changeLogRef = useRef(new ChangeLog());
   const pendingChangesRef = useRef(new ChangeLog()); // Track pending changes separately
@@ -578,6 +579,11 @@ export function ResultView({
   // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
   // Fetch benefit plan snapshot for alignment conditions
   useEffect(() => {
+    // Pre-populate doctorNotes from spectraFields
+    if (spectraFields?.doctorNotes && !doctorNotes) {
+      setDoctorNotes((spectraFields.doctorNotes as string) ?? "");
+    }
+
     const claimId = state?.claimId?.trim();
     if (!claimId || benefitPlanSnapshot) return;
     let cancelled = false;
@@ -650,8 +656,7 @@ export function ResultView({
                         ?? (displayAnalysis?.totalAmount?.value ?? 0);
 
     // Send clinical details immediately — don't wait for ICD fetch
-    if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword || processingRemarks.trim()) {
-      console.log("[ClaimAI] sending setClinicalDetails, processingRemarks:", processingRemarks.trim());
+    if (diagnosis || lineOfTreatment || presentingComplaint.trim() || hospTreatmentKeyword || processingRemarks.trim() || doctorNotes.trim()) {
       window.parent.postMessage(
         {
           source:               "claimai",
@@ -660,6 +665,7 @@ export function ResultView({
           lineOfTreatment:      lineOfTreatment       ?? "",
           presentingComplaint:  presentingComplaint.trim(),
           processingRemarks:    processingRemarks.trim(),
+          doctorNotes:          doctorNotes.trim(),
           hospTreatmentKeyword: hospTreatmentKeyword  ?? "",
           icdSlots:             [],
           procedureHint:        procedureHint,
@@ -1176,6 +1182,18 @@ export function ResultView({
                     value={processingRemarks}
                     onChange={(e) => setProcessingRemarks(e.target.value)}
                     placeholder="Enter processing remarks..."
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 resize-none"
+                  />
+                </div>
+                <div className="mt-4 space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Doctor Notes
+                  </label>
+                  <textarea
+                    value={doctorNotes}
+                    onChange={(e) => setDoctorNotes(e.target.value)}
+                    placeholder="Doctor notes..."
                     rows={3}
                     className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 resize-none"
                   />
