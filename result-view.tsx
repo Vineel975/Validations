@@ -577,13 +577,21 @@ export function ResultView({
   // which facility option best matches what the patient is eligible for.
   // Sends data to Spectra parent via postMessage on Save click.
   // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
-  // Pre-populate doctorNotes from spectraFields when iframe loads
+  // Pre-populate doctorNotes — fetch from API using claimId (most reliable)
   useEffect(() => {
-    console.log("[ClaimAI] spectraFields.doctorNotes:", spectraFields?.doctorNotes);
-    if (spectraFields?.doctorNotes && !doctorNotes) {
+    const claimId = state?.claimId?.trim();
+    if (!claimId || doctorNotes) return;
+    // Try spectraFields first (fast path)
+    if (spectraFields?.doctorNotes) {
       setDoctorNotes((spectraFields.doctorNotes as string) ?? "");
+      return;
     }
-  }, [spectraFields]);
+    // Fallback: fetch directly from server
+    fetch(`/api/doctor-notes?claimId=${encodeURIComponent(claimId)}`)
+      .then((r) => r.json())
+      .then((data) => { if (data.doctorNotes) setDoctorNotes(data.doctorNotes); })
+      .catch(() => {});
+  }, [state?.claimId, spectraFields]);
 
   // Fetch benefit plan snapshot for alignment conditions
   useEffect(() => {
