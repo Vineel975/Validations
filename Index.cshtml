@@ -8548,7 +8548,6 @@
 
                     // Doctor Notes — store in closure var (DOM may not exist if Notes tab not opened)
                     var doctorNotes = event.data.doctorNotes || '';
-                    console.log('[ClaimAI] doctorNotes from postMessage:', doctorNotes);
                     if (doctorNotes) {
                         window._claimAI_doctorNotes = doctorNotes;
                         // Set in DOM only if element exists (Notes tab opened)
@@ -8583,7 +8582,6 @@
                         // then fall back to current dropdown value
                         var approvedFacId = window._claimAI_approvedFacilityId || $('#ddlApprovedFacility').val() || '';
 
-                        console.log('[ClaimAI] AJAX save doctorNotes:', window._claimAI_doctorNotes);
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
                             type: 'POST',
@@ -8598,8 +8596,11 @@
                                 approvedFacilityId:      approvedFacId
                             },
                             success: function (res) {
-                                console.log('[ClaimAI] SaveClinical response:', JSON.stringify(res));
                                 if (res && res.success) {
+                                    // Update txtDoctorRemarks in DOM if Notes tab is open
+                                    if (window._claimAI_doctorNotes && $('#txtDoctorRemarks').length) {
+                                        $('#txtDoctorRemarks').val(window._claimAI_doctorNotes);
+                                    }
                                     var $toast = $('<div/>')
                                         .text('✓ Hospitalization details saved')
                                         .css({
@@ -8624,6 +8625,7 @@
                 // Doctor Notes sync from iframe
                 if (event.data.type === 'setDoctorNotes') {
                     var doctorNotesVal = event.data.doctorNotes || '';
+                    window._claimAI_doctorNotes = doctorNotesVal;
                     $('#txtDoctorRemarks').val(doctorNotesVal).trigger('change');
                 }
 
@@ -8857,6 +8859,18 @@
                             console.warn('[ClaimAI] Coding save error:', xhr.responseText);
                         }
                     });
+
+            // Watch for txtDoctorRemarks appearing in DOM (Notes tab is lazy-loaded)
+            // When it appears, populate it with the value saved from ClaimAI iframe
+            var _claimAI_observer = new MutationObserver(function() {
+                var $el = $('#txtDoctorRemarks');
+                if ($el.length && window._claimAI_doctorNotes && !$el.data('claimAI_set')) {
+                    $el.val(window._claimAI_doctorNotes).trigger('change');
+                    $el.data('claimAI_set', true);
+                }
+            });
+            _claimAI_observer.observe(document.body, { childList: true, subtree: true });
+
                 };
 
                 $("#btnSaveBimaSatarDetails").on('click', function (e) {
