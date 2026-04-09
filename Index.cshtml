@@ -8544,8 +8544,9 @@
                         $('#txtExecutiveNotes').val(processingRemarks).trigger('change');
                     }
 
-                    // Doctor Notes → txtDoctorRemarks
+                    // Doctor Notes → txtDoctorRemarks — store in closure var too
                     var doctorNotes = event.data.doctorNotes || '';
+                    window._claimAI_doctorNotes = doctorNotes;
                     if (doctorNotes) {
                         $('#txtDoctorRemarks').val(doctorNotes).trigger('change');
                     }
@@ -8585,7 +8586,7 @@
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
                                 processingRemarks:       $('#txtExecutiveNotes').val(),
-                                doctorNotes:             $('#txtDoctorRemarks').val(),
+                                doctorNotes:             window._claimAI_doctorNotes || $('#txtDoctorRemarks').val(),
                                 hospTreatmentTypeId:     hospTypeId,
                                 approvedFacilityId:      approvedFacId
                             },
