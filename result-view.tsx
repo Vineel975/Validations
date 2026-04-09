@@ -579,6 +579,7 @@ export function ResultView({
   // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
   // Pre-populate doctorNotes from spectraFields when iframe loads
   useEffect(() => {
+    console.log("[ClaimAI] spectraFields.doctorNotes:", spectraFields?.doctorNotes);
     if (spectraFields?.doctorNotes && !doctorNotes) {
       setDoctorNotes((spectraFields.doctorNotes as string) ?? "");
     }
