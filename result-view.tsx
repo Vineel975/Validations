@@ -579,11 +579,13 @@ export function ResultView({
   // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
   // Pre-populate presentingComplaint from AI extraction in processPdf
   useEffect(() => {
-    if (presentingComplaint || !displayAnalysis) return;
+    if (!displayAnalysis) return;
     const admissibility = displayAnalysis?.medicalAdmissibility as {
+      diagnosis?: string | null;
       presentingComplaint?: string | null;
     } | null | undefined;
-    if (admissibility?.presentingComplaint) {
+    console.log("[ClaimAI] medicalAdmissibility:", JSON.stringify(admissibility));
+    if (admissibility?.presentingComplaint && !presentingComplaint) {
       setPresentingComplaint(admissibility.presentingComplaint);
     }
   }, [displayAnalysis]);
