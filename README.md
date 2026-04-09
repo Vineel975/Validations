@@ -1,3 +1,10 @@
+[ClaimAI] medicalAdmissibility: {"conditionTests":[{"condition":"Cataract (A-scan)","matchedDiagnosis":"Left eye cataract","numericValue":null,"pageNumber":13,"reportValue":"Yes","sourceText":"IOL CALCULATION ... A-scan (LE) AL 25.57 K1 42.25 K2 42.63","status":"expected","testName":"A-scan","unit":""}],"diagnosis":"Left eye cataract, Immaturity Cataract (IMC)","doctorNotes":"C/O DOV (L) x 1 month\n\nVA: 6/160 <6/160\n\n(L) IMC (US > 20)\n\n(L) Cataract SI IOL (monofocal) (MICS)\n\nKindly send approval letter with DOA - 3/4/26 tomorrow Friday 9:00 AM. Please find attached Patient ID proof.","doctorNotesPageNumber":3,"icdCode1":"H25.812","icdCode2":null,"icdCode3":null,"lineOfTreatment":"Left eye cataract surgery with monofocal IOL (MICS)"}
+
+
+
+
+
+
 DECLARE @TableName NVARCHAR(128) = 'YourTableName';
 DECLARE @SearchValue NVARCHAR(100) = 'YourSearchText';
 
