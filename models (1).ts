@@ -82,12 +82,12 @@ export const medicalAdmissibilityItemSchema = z.object({
     ),
   presentingComplaint: z
     .string()
-    .nullable()
-    .optional()
     .describe(
-      "The patient's presenting complaint or chief complaint — the primary symptom or reason for admission as stated by the patient or noted in the admission record. " +
-      "Look for sections labeled 'Chief Complaint', 'Presenting Complaint', 'C/O', 'Complaints', 'Reason for Admission'. " +
-      "Return null if not found.",
+      "A brief 1-2 sentence clinical summary of the patient's condition synthesized from all information in the document " +
+      "(diagnosis, symptoms, doctor notes, clinical findings, procedure). " +
+      "Should read like a doctor's admission summary. " +
+      "Example: 'Patient presents with left eye cataract with diminution of vision for 1 month, admitted for cataract surgery with monofocal IOL implantation.' " +
+      "Always return a value — never return empty string.",
     ),
   doctorNotes: z
     .string()
