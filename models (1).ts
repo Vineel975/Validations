@@ -80,6 +80,15 @@ export const medicalAdmissibilityItemSchema = z.object({
     .describe(
       "ICD-10 code for a third condition or significant finding if present. Return null if not applicable.",
     ),
+  presentingComplaint: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "The patient's presenting complaint or chief complaint — the primary symptom or reason for admission as stated by the patient or noted in the admission record. " +
+      "Look for sections labeled 'Chief Complaint', 'Presenting Complaint', 'C/O', 'Complaints', 'Reason for Admission'. " +
+      "Return null if not found.",
+    ),
   doctorNotes: z
     .string()
     .nullable()
