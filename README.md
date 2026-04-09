@@ -1,1 +1,4 @@
-<img width="843" height="386" alt="image" src="https://github.com/user-attachments/assets/1ac55b65-b0c7-49e6-a4bd-b82ef97d1575" />
+SELECT TOP 1 ID, ClaimID, ServiceID, BillAmount, DeductionAmount, BillNo, BillDate
+FROM ClaimsBillDetails 
+WHERE ClaimID = 26040206200
+ORDER BY ID DESC
