@@ -1,9 +1,1 @@
-name                                                                                                                             type
--------------------------------------------------------------------------------------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------
-ServiceID                                                                                                                        int
-BillSlNo                                                                                                                         tinyint
-BillNo                                                                                                                           varchar
-BillDate                                                                                                                         datetime
-BillAmount                                                                                                                       money
-DeductionAmount                                                                                                                  money
-
+[ClaimAI] SaveBilling failed: Error While Inserting Data into Staging TableTrying to pass a table-valued parameter with 6 column(s) where the corresponding user-defined table type requires 7 column(s).
