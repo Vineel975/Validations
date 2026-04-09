@@ -1,12 +1,8 @@
-ServiceID   BillNo                    BillDate                BillAmount            DeductionAmount
------------ ------------------------- ----------------------- --------------------- ---------------------
-6           123                       2026-04-09 00:00:00.000 134.00                0.00
+SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'ClaimDeductionDetails'
+ORDER BY ORDINAL_POSITION
 
 
+SELECT TOP 10 ID, Name FROM Mst_DeductionReasons WHERE Deleted = 0 ORDER BY ID
 
-TABLE_NAME
---------------------------------------------------------------------------------------------------------------------------------
-ClaimDeductionDetails
-Mst_DeductionReasons
-
-(2 rows affected)
+SELECT TOP 3 * FROM ClaimDeductionDetails WHERE ClaimID = 26040206200
