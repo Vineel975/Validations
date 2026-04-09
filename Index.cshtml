@@ -8648,15 +8648,19 @@
                         success: function(res) {
                             console.log('[ClaimAI] SaveBilling response:', res);
                             if (res && res.success) {
-                                // Refresh billing table
+                                // Refresh Bill Details — call Get_ServiceBillingDetails directly
+                                // It's defined in BillingPartialView and available globally
                                 setTimeout(function() {
+                                    var claimIDVal = $('#hdnClaimID').val();
+                                    var slNoVal    = $('#hdnClaimSlNo').val();
                                     if (typeof Get_ServiceBillingDetails === 'function') {
-                                        Get_ServiceBillingDetails(claimID2, slNo2, 0);
+                                        Get_ServiceBillingDetails(claimIDVal, slNoVal, 0);
                                     } else {
-                                        // Directly call the onclick of the Bill Details header
+                                        // Force reload by eval-ing the onclick directly
                                         var lnk = document.getElementById('ID_Servicebilldetails');
-                                        if (lnk && lnk.onclick) {
-                                            lnk.onclick();
+                                        if (lnk) {
+                                            var onclickStr = lnk.getAttribute('onclick');
+                                            if (onclickStr) eval(onclickStr);
                                         }
                                     }
                                 }, 1500);
