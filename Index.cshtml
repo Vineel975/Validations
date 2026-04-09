@@ -8629,6 +8629,52 @@
                     $('#txtDoctorRemarks').val(doctorNotesVal).trigger('change');
                 }
 
+                // Bill Details automation from ClaimAI
+                if (event.data.type === 'setBillingDetails') {
+                    var hospBillAmt   = event.data.hospitalBillAmount || 0;
+                    var tariffBillAmt = event.data.tariffAmount        || 0;
+                    var claimID2      = $('#hdnClaimID').val();
+                    var slNo2         = $('#hdnClaimSlNo').val();
+
+                    $.ajax({
+                        url:  '@Url.Action("SaveBillingForClaimAI", "MedicalScrutiny")',
+                        type: 'POST',
+                        data: {
+                            claimId:            claimID2,
+                            slNo:               slNo2,
+                            hospitalBillAmount: hospBillAmt,
+                            tariffAmount:       tariffBillAmt
+                        },
+                        success: function(res) {
+                            console.log('[ClaimAI] SaveBilling response:', res);
+                            if (res && res.success) {
+                                if (typeof Get_ServiceBillingDetails === 'function') {
+                                    setTimeout(function() {
+                                        Get_ServiceBillingDetails(claimID2, slNo2, 0);
+                                    }, 1500);
+                                }
+                                var $toast = $('<div/>')
+                                    .text('✓ Bill details saved')
+                                    .css({
+                                        position: 'fixed', bottom: '80px', right: '20px',
+                                        background: '#5b4fcf', color: '#fff',
+                                        padding: '8px 14px', borderRadius: '4px',
+                                        fontSize: '13px', zIndex: 99999,
+                                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                                    }).appendTo('body');
+                                setTimeout(function() {
+                                    $toast.fadeOut(400, function() { $toast.remove(); });
+                                }, 3000);
+                            } else {
+                                console.warn('[ClaimAI] SaveBilling failed:', res && res.message);
+                            }
+                        },
+                        error: function(xhr) {
+                            console.warn('[ClaimAI] SaveBilling error:', xhr.responseText);
+                        }
+                    });
+                }
+
                 // ICD slots arrive after async fetch — triggers coding save
                 if (event.data.type === 'setIcdSlots') {
                     var icdSlots2      = event.data.icdSlots      || [];
