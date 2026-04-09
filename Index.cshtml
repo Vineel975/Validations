@@ -8648,11 +8648,18 @@
                         success: function(res) {
                             console.log('[ClaimAI] SaveBilling response:', res);
                             if (res && res.success) {
-                                if (typeof Get_ServiceBillingDetails === 'function') {
-                                    setTimeout(function() {
+                                // Refresh billing table
+                                setTimeout(function() {
+                                    if (typeof Get_ServiceBillingDetails === 'function') {
                                         Get_ServiceBillingDetails(claimID2, slNo2, 0);
-                                    }, 1500);
-                                }
+                                    } else {
+                                        // Directly call the onclick of the Bill Details header
+                                        var lnk = document.getElementById('ID_Servicebilldetails');
+                                        if (lnk && lnk.onclick) {
+                                            lnk.onclick();
+                                        }
+                                    }
+                                }, 1500);
                                 var $toast = $('<div/>')
                                     .text('✓ Bill details saved')
                                     .css({
