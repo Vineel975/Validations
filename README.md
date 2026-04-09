@@ -1,4 +1,5 @@
-SELECT TOP 1 ID, ClaimID, ServiceID, BillAmount, DeductionAmount, BillNo, BillDate
-FROM ClaimsBillDetails 
-WHERE ClaimID = 26040206200
-ORDER BY ID DESC
+ID                   ClaimID              ServiceID   BillAmount            DeductionAmount       BillNo                    BillDate
+-------------------- -------------------- ----------- --------------------- --------------------- ------------------------- -----------------------
+133341000            26040206200          6           134.00                0.00                  123                       2026-04-09 00:00:00.000
+133340999            26040206200          3           39900.00              0.00                                            NULL
+
