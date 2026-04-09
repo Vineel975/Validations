@@ -7675,6 +7675,133 @@ namespace Enrollment.Controllers
         /// GET /MedicalScrutiny/GetClaimFieldsForValidation?claimId=xxx
         /// </summary>
         /// <summary>
+        /// POST /MedicalScrutiny/SaveBillingForClaimAI
+        /// Sets all service rows to zero except ServiceID=6 (Others).
+        /// Others: BillAmount = hospitalBillAmt, Deduction = max(hospitalBillAmt - tariffAmt, 0).
+        /// </summary>
+        [HttpPost]
+        public ActionResult SaveBillingForClaimAI(
+            string claimId, string slNo,
+            string hospitalBillAmount, string tariffAmount)
+        {
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                    return Json(new { success = false, message = "Session expired" });
+
+                long claimIdLong; int slNoInt;
+                if (!long.TryParse((claimId ?? "").Trim(), out claimIdLong) || claimIdLong <= 0)
+                    return Json(new { success = false, message = "Invalid claimId" });
+                if (!int.TryParse((slNo ?? "").Trim(), out slNoInt)) slNoInt = 1;
+
+                decimal hospAmt = 0m, tariffAmt = 0m;
+                decimal.TryParse((hospitalBillAmount ?? "").Trim(), out hospAmt);
+                decimal.TryParse((tariffAmount ?? "").Trim(), out tariffAmt);
+
+                decimal deductionAmt = (hospAmt > tariffAmt && tariffAmt > 0) ? hospAmt - tariffAmt : 0m;
+                decimal eligibleAmt  = hospAmt - deductionAmt;
+
+                // ServiceDetails - all rows, only Others (6) has amounts
+                int[] allServiceIds = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+                var dtServices = new System.Data.DataTable();
+                dtServices.Columns.Add("ServiceID",        typeof(int));
+                dtServices.Columns.Add("BillAmount",       typeof(decimal));
+                dtServices.Columns.Add("DeductionAmount",  typeof(decimal));
+                dtServices.Columns.Add("DiscountAmount",   typeof(decimal));
+                dtServices.Columns.Add("EligibleAmount",   typeof(decimal));
+                dtServices.Columns.Add("SanctionedAmount", typeof(decimal));
+                dtServices.Columns.Add("BillRoomdays",     typeof(int));
+
+                foreach (var svcId in allServiceIds)
+                {
+                    var row = dtServices.NewRow();
+                    row["ServiceID"]       = svcId;
+                    row["BillRoomdays"]    = 0;
+                    row["DiscountAmount"]  = 0m;
+                    if (svcId == 6)
+                    {
+                        row["BillAmount"]       = hospAmt;
+                        row["DeductionAmount"]  = deductionAmt;
+                        row["EligibleAmount"]   = eligibleAmt;
+                        row["SanctionedAmount"] = eligibleAmt;
+                    }
+                    else
+                    {
+                        row["BillAmount"]       = 0m;
+                        row["DeductionAmount"]  = 0m;
+                        row["EligibleAmount"]   = 0m;
+                        row["SanctionedAmount"] = 0m;
+                    }
+                    dtServices.Rows.Add(row);
+                }
+
+                // BillDetails - only Others row
+                var dtBillDetails = new System.Data.DataTable();
+                dtBillDetails.Columns.Add("ServiceID",  typeof(int));
+                dtBillDetails.Columns.Add("BillSlNo",   typeof(int));
+                dtBillDetails.Columns.Add("BillNo",     typeof(string));
+                dtBillDetails.Columns.Add("BillDate",   typeof(string));
+                dtBillDetails.Columns.Add("BillAmount", typeof(decimal));
+                var billRow = dtBillDetails.NewRow();
+                billRow["ServiceID"]  = 6;
+                billRow["BillSlNo"]   = 1;
+                billRow["BillNo"]     = "AI";
+                billRow["BillDate"]   = DateTime.Now.ToString("dd-MMM-yyyy");
+                billRow["BillAmount"] = hospAmt;
+                dtBillDetails.Rows.Add(billRow);
+
+                // DeductionDetails - only if deduction > 0, reason 3 = Restricted to agreed tariff
+                System.Data.DataTable dtDeductions = null;
+                if (deductionAmt > 0)
+                {
+                    dtDeductions = new System.Data.DataTable();
+                    dtDeductions.Columns.Add("ServiceID",         typeof(int));
+                    dtDeductions.Columns.Add("BillSlNo",          typeof(int));
+                    dtDeductions.Columns.Add("DeductionSlNo",     typeof(int));
+                    dtDeductions.Columns.Add("DeductionAmount",   typeof(decimal));
+                    dtDeductions.Columns.Add("DeductionReasonID", typeof(int));
+                    dtDeductions.Columns.Add("FreeTextValue",     typeof(string));
+                    var dedRow = dtDeductions.NewRow();
+                    dedRow["ServiceID"]         = 6;
+                    dedRow["BillSlNo"]          = 1;
+                    dedRow["DeductionSlNo"]     = 1;
+                    dedRow["DeductionAmount"]   = deductionAmt;
+                    dedRow["DeductionReasonID"] = 3;
+                    dedRow["FreeTextValue"]     = "";
+                    dtDeductions.Rows.Add(dedRow);
+                }
+
+                int userRegionId     = Convert.ToInt32(Session[SessionValue.UserRegionID]);
+                int regionId         = Convert.ToInt32(Session[SessionValue.RegionID]);
+                int roleId           = Convert.ToInt32(Session[SessionValue.RoleID] ?? "0");
+                System.Data.DataTable dtDisc  = (System.Data.DataTable)(Session["ClaimDiscount"]);
+                System.Data.DataTable dtTariffDisc = new System.Data.DataTable();
+                dtTariffDisc.Columns.Add("ServiceID",      typeof(int));
+                dtTariffDisc.Columns.Add("TariffAmount",   typeof(decimal));
+                dtTariffDisc.Columns.Add("DiscountAmount", typeof(decimal));
+
+                string vMessage = string.Empty;
+                int result = _objClaimsVM.Save_ServiceBillingDetailsVM(
+                    claimIdLong, slNoInt,
+                    dtBillDetails, dtDeductions, dtServices,
+                    4, 18, roleId, regionId, userRegionId,
+                    hospAmt.ToString(), eligibleAmt.ToString(),
+                    eligibleAmt.ToString(), "0", "0", "",
+                    tariffAmt.ToString(), "0",
+                    dtDisc, dtTariffDisc,
+                    0m, false, "", out vMessage);
+
+                bool ok = result > 0 || string.IsNullOrEmpty(vMessage);
+                return Json(new { success = ok, message = vMessage });
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                return Json(new { success = false, message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Called by ClaimAI iframe to save clinical details silently (no page refresh).
         /// Updates Claimsdetails: ProbableDiagnosis, ProbableLineOfTreatment,
         /// PresentComplaint, HospTreatmentTypeID.
