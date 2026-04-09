@@ -577,11 +577,14 @@ export function ResultView({
   // which facility option best matches what the patient is eligible for.
   // Sends data to Spectra parent via postMessage on Save click.
   // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
-  // Pre-populate presentingComplaint from AI extraction
+  // Pre-populate presentingComplaint from AI extraction in processPdf
   useEffect(() => {
-    const extracted = displayAnalysis?.medicalAdmissibility?.presentingComplaint;
-    if (extracted && !presentingComplaint) {
-      setPresentingComplaint(extracted);
+    if (presentingComplaint || !displayAnalysis) return;
+    const admissibility = displayAnalysis?.medicalAdmissibility as {
+      presentingComplaint?: string | null;
+    } | null | undefined;
+    if (admissibility?.presentingComplaint) {
+      setPresentingComplaint(admissibility.presentingComplaint);
     }
   }, [displayAnalysis]);
 
