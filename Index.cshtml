@@ -7293,8 +7293,10 @@
             spectraFields.memberPolicyId = $('#hdnMemberPolicyID').val() || '';
             spectraFields.claimSlNo      = $('#hdnClaimSlNo').val() || '1';
 
-            // Doctor Notes — pre-populate iframe from Spectra txtDoctorRemarks
-            spectraFields.doctorNotes = $('#txtDoctorRemarks').val() || '';
+            // Doctor Notes — _claimAI_doctorNotes stores the value independently of DOM
+            // txtDoctorRemarks only exists in DOM after Notes tab is opened
+            window._claimAI_doctorNotes = '';
+            spectraFields.doctorNotes = '';  // will be fetched by iframe via /api/doctor-notes
 
             // Only add spectraFields if at least one value was found
             if (Object.keys(spectraFields).length > 0) {
@@ -8544,11 +8546,14 @@
                         $('#txtExecutiveNotes').val(processingRemarks).trigger('change');
                     }
 
-                    // Doctor Notes → txtDoctorRemarks — store in closure var too
+                    // Doctor Notes — store in closure var (DOM may not exist if Notes tab not opened)
                     var doctorNotes = event.data.doctorNotes || '';
-                    window._claimAI_doctorNotes = doctorNotes;
                     if (doctorNotes) {
-                        $('#txtDoctorRemarks').val(doctorNotes).trigger('change');
+                        window._claimAI_doctorNotes = doctorNotes;
+                        // Set in DOM only if element exists (Notes tab opened)
+                        if ($('#txtDoctorRemarks').length) {
+                            $('#txtDoctorRemarks').val(doctorNotes).trigger('change');
+                        }
                     }
 
                     // Probable Line of Treatment → ddlHospTreatmentType
@@ -8586,7 +8591,7 @@
                                 probableLineOfTreatment: $('#txtProbableLineOfTreatment').val(),
                                 presentComplaint:        $('#txtPresentComplaint').val(),
                                 processingRemarks:       $('#txtExecutiveNotes').val(),
-                                doctorNotes:             window._claimAI_doctorNotes || $('#txtDoctorRemarks').val(),
+                                doctorNotes:             window._claimAI_doctorNotes || '',
                                 hospTreatmentTypeId:     hospTypeId,
                                 approvedFacilityId:      approvedFacId
                             },
