@@ -577,15 +577,13 @@ export function ResultView({
   // which facility option best matches what the patient is eligible for.
   // Sends data to Spectra parent via postMessage on Save click.
   // Populates: Aprv Accommodation + Probable Diagnosis + Present Complaint
-  // Pre-populate presentingComplaint from AI extraction in processPdf
+  // Pre-populate presentingComplaint from AI extraction only
   useEffect(() => {
-    if (!displayAnalysis) return;
+    if (presentingComplaint || !displayAnalysis) return;
     const admissibility = displayAnalysis?.medicalAdmissibility as {
-      diagnosis?: string | null;
       presentingComplaint?: string | null;
     } | null | undefined;
-    console.log("[ClaimAI] medicalAdmissibility:", JSON.stringify(admissibility));
-    if (admissibility?.presentingComplaint && !presentingComplaint) {
+    if (admissibility?.presentingComplaint) {
       setPresentingComplaint(admissibility.presentingComplaint);
     }
   }, [displayAnalysis]);
@@ -695,6 +693,24 @@ export function ResultView({
           procedureHint:        procedureHint,
           eligibleAmount:       eligibleAmount,
           packageAmount:        packageAmount,
+        },
+        "*",
+      );
+    }
+
+    // Send billing details to Spectra for Bill Details automation
+    // tariffAmount: use edited tariff if available, else from analysis
+    const tariffAmtForBilling = editedAmounts.tariff
+      ?? (displayAnalysis?.tariffExtractionItem as Array<{amount?: number}> | null | undefined)
+          ?.reduce((s, i) => s + (i.amount ?? 0), 0)
+      ?? 0;
+    if (packageAmount > 0 || tariffAmtForBilling > 0) {
+      window.parent.postMessage(
+        {
+          source:             "claimai",
+          type:               "setBillingDetails",
+          hospitalBillAmount: packageAmount,
+          tariffAmount:       tariffAmtForBilling,
         },
         "*",
       );
