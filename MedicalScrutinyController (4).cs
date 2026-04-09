@@ -7757,19 +7757,21 @@ namespace Enrollment.Controllers
                 if (deductionAmt > 0)
                 {
                     dtDeductions = new System.Data.DataTable();
-                    dtDeductions.Columns.Add("ServiceID",         typeof(int));
-                    dtDeductions.Columns.Add("BillSlNo",          typeof(int));
-                    dtDeductions.Columns.Add("DeductionSlNo",     typeof(int));
-                    dtDeductions.Columns.Add("DeductionAmount",   typeof(decimal));
-                    dtDeductions.Columns.Add("DeductionReasonID", typeof(int));
-                    dtDeductions.Columns.Add("FreeTextValue",     typeof(string));
+                    dtDeductions.Columns.Add("ServiceID",             typeof(int));
+                    dtDeductions.Columns.Add("BillSlNo",              typeof(byte));
+                    dtDeductions.Columns.Add("DeductionSlNo",         typeof(byte));
+                    dtDeductions.Columns.Add("DeductionAmount",       typeof(decimal));
+                    dtDeductions.Columns.Add("DeductionReasonID",     typeof(int));
+                    dtDeductions.Columns.Add("IRDADeductionReasonID", typeof(int));
+                    dtDeductions.Columns.Add("FreeTextValue",         typeof(string));
                     var dedRow = dtDeductions.NewRow();
-                    dedRow["ServiceID"]         = 6;
-                    dedRow["BillSlNo"]          = 1;
-                    dedRow["DeductionSlNo"]     = 1;
-                    dedRow["DeductionAmount"]   = deductionAmt;
-                    dedRow["DeductionReasonID"] = 3;
-                    dedRow["FreeTextValue"]     = "";
+                    dedRow["ServiceID"]             = 6;
+                    dedRow["BillSlNo"]              = (byte)1;
+                    dedRow["DeductionSlNo"]         = (byte)1;
+                    dedRow["DeductionAmount"]       = deductionAmt;
+                    dedRow["DeductionReasonID"]     = 3;  // Restricted to agreed tariff
+                    dedRow["IRDADeductionReasonID"] = DBNull.Value;
+                    dedRow["FreeTextValue"]         = "";
                     dtDeductions.Rows.Add(dedRow);
                 }
 
