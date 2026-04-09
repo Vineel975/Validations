@@ -7267,6 +7267,7 @@
             }
 
             console.log('[ClaimAI] Spectra fields collected:', spectraFields);
+            console.log('[ClaimAI] doctorNotes in spectraFields:', spectraFields.doctorNotes);
 
             var payload = {
                 claimId:            claimID.toString(),
@@ -8546,9 +8547,11 @@
 
                     // Doctor Notes → txtDoctorRemarks — store in closure var too
                     var doctorNotes = event.data.doctorNotes || '';
+                    console.log('[ClaimAI] doctorNotes from iframe on save:', doctorNotes);
                     window._claimAI_doctorNotes = doctorNotes;
                     if (doctorNotes) {
                         $('#txtDoctorRemarks').val(doctorNotes).trigger('change');
+                        console.log('[ClaimAI] txtDoctorRemarks set to:', $('#txtDoctorRemarks').val());
                     }
 
                     // Probable Line of Treatment → ddlHospTreatmentType
