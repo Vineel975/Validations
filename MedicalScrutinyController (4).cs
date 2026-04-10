@@ -8458,12 +8458,25 @@ namespace Enrollment.Controllers
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
+                    // Log raw response for debugging
+                    if (string.IsNullOrWhiteSpace(tokenJson) || !tokenJson.TrimStart().StartsWith("{"))
+                    {
+                        res.Success = false;
+                        res.Message = "DMS token raw response (not JSON): " + tokenJson;
+                        return Json(res, JsonRequestBehavior.AllowGet);
+                    }
                     dynamic tokenObj = Newtonsoft.Json.JsonConvert.DeserializeObject(tokenJson);
-                    token = (tokenObj?.token ?? tokenObj?.Token ?? tokenObj?.access_token ?? "").ToString();
+                    // Try all possible token field names
+                    token = "";
+                    if (tokenObj?.token != null)           token = tokenObj.token.ToString();
+                    else if (tokenObj?.Token != null)      token = tokenObj.Token.ToString();
+                    else if (tokenObj?.access_token != null) token = tokenObj.access_token.ToString();
+                    else if (tokenObj?.accessToken != null) token = tokenObj.accessToken.ToString();
+                    else if (tokenObj?.data?.token != null) token = tokenObj.data.token.ToString();
                     if (string.IsNullOrWhiteSpace(token))
                     {
                         res.Success = false;
-                        res.Message = "DMS token empty. Response: " + tokenJson;
+                        res.Message = "DMS token empty. Full response: " + tokenJson;
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
