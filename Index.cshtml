@@ -7135,7 +7135,6 @@
             $.ajax({
                 url:  '/MedicalScrutiny/GetMedicalBillDocument',
                 type: 'GET',
-                data: { claimId: claimID, slNo: slNo },
                 success: function(res) {
                     console.log('[ClaimAI] GetMedicalBillDocument response:', res.Success, res.Message);
                     if (!res.Success || !res.Data || !res.Data.base64Content) {
