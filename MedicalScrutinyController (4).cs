@@ -8487,11 +8487,39 @@ namespace Enrollment.Controllers
                     }
                 }
 
-                var docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
+                // Log raw docs response to understand structure
+                if (string.IsNullOrWhiteSpace(docsJson))
+                {
+                    res.Success = false;
+                    res.Message = "DMS docs response is empty.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Parse — could be array or object with nested array
+                List<dynamic> docsList = null;
+                try
+                {
+                    var trimmed = docsJson.TrimStart();
+                    if (trimmed.StartsWith("["))
+                    {
+                        docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
+                    }
+                    else if (trimmed.StartsWith("{"))
+                    {
+                        dynamic wrapper = Newtonsoft.Json.JsonConvert.DeserializeObject(docsJson);
+                        // Try common wrapper field names
+                        var inner = wrapper?.data ?? wrapper?.Data ?? wrapper?.documents ?? wrapper?.Documents
+                                 ?? wrapper?.result ?? wrapper?.Result ?? wrapper?.items ?? wrapper?.Items;
+                        if (inner != null)
+                            docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(inner.ToString());
+                    }
+                }
+                catch { }
+
                 if (docsList == null || docsList.Count == 0)
                 {
                     res.Success = false;
-                    res.Message = "No documents found in DMS for claimId=" + cId + ". Response: " + docsJson;
+                    res.Message = "No documents found. Raw DMS response: " + docsJson;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
