@@ -8427,6 +8427,14 @@ namespace Enrollment.Controllers
                 string clientId   = "Test";
                 string apiKey     = "WWGurkkutK8F5Lpf9WGnnOUAFePbSObpi4m2Pq8w6xk=";
 
+                // Force TLS 1.2 — required for modern HTTPS APIs
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.SecurityProtocolType.Tls12 |
+                    System.Net.SecurityProtocolType.Tls11 |
+                    System.Net.SecurityProtocolType.Tls;
+                System.Net.ServicePointManager.ServerCertificateValidationCallback =
+                    (sender, cert, chain, errors) => true;
+
                 // Step 1: Generate token using WebClient (synchronous, no AggregateException)
                 string token = "";
                 string docsJson = "";
