@@ -1,1 +1,1 @@
-[ClaimAI] GetMedicalBillDocument response: false Error loading medical bill from DMS: Unexpected character encountered while parsing value: e. Path '', line 0, position 0.
+Could not load medical bill: DMS token raw response (not JSON): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzU5ODIyOTAsImlzcyI6Imh0dHBzOi8vbnh0Z2VuLWRtcy1hcGktcWEuZmhwbC5uZXQvIiwiYXVkIjoiMzlhZDQ0NjgtOWRmOC00ZjdjIn0.Oe3c1CAZnQPmfbDFZJCVsJIgqqOq9E1VwFG5PEglwvc
