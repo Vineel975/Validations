@@ -8427,102 +8427,107 @@ namespace Enrollment.Controllers
                 string clientId   = "Test";
                 string apiKey     = "WWGurkkutK8F5Lpf9WGnnOUAFePbSObpi4m2Pq8w6xk=";
 
-                using (var httpClient = new System.Net.Http.HttpClient())
+                // Step 1: Generate token using WebClient (synchronous, no AggregateException)
+                string token = "";
+                string docsJson = "";
+                using (var wc = new System.Net.WebClient())
                 {
-                    httpClient.Timeout = TimeSpan.FromSeconds(30);
-
-                    // Step 1: Generate token
-                    var tokenPayload = Newtonsoft.Json.JsonConvert.SerializeObject(
-                        new { clientId, apiKey });
-                    var tokenContent = new System.Net.Http.StringContent(
-                        tokenPayload, System.Text.Encoding.UTF8, "application/json");
-                    var tokenTask = httpClient.PostAsync(
-                        $"{dmsBaseUrl}/api/Auth/generatetoken", tokenContent);
-                    tokenTask.Wait();
-                    var tokenResp = tokenTask.Result;
-                    if (!tokenResp.IsSuccessStatusCode)
+                    wc.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                    wc.Headers[System.Net.HttpRequestHeader.Accept]      = "*/*";
+                    var tokenPayload = Newtonsoft.Json.JsonConvert.SerializeObject(new { clientId, apiKey });
+                    string tokenJson = "";
+                    try
                     {
+                        tokenJson = wc.UploadString(dmsBaseUrl + "/api/Auth/generatetoken", "POST", tokenPayload);
+                    }
+                    catch (System.Net.WebException wex)
+                    {
+                        string errBody = wex.Response != null
+                            ? new System.IO.StreamReader(wex.Response.GetResponseStream()).ReadToEnd()
+                            : wex.Message;
                         res.Success = false;
-                        res.Message = "DMS token generation failed: " + tokenResp.StatusCode;
+                        res.Message = "DMS token generation failed: " + errBody;
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
-                    var tokenJson = tokenResp.Content.ReadAsStringAsync().Result;
+
                     dynamic tokenObj = Newtonsoft.Json.JsonConvert.DeserializeObject(tokenJson);
-                    string token = tokenObj?.token ?? tokenObj?.Token ?? tokenObj?.access_token ?? "";
+                    token = (tokenObj?.token ?? tokenObj?.Token ?? tokenObj?.access_token ?? "").ToString();
                     if (string.IsNullOrWhiteSpace(token))
                     {
                         res.Success = false;
-                        res.Message = "DMS token is empty. Response: " + tokenJson;
+                        res.Message = "DMS token empty. Response: " + tokenJson;
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
                     // Step 2: Get document URLs
-                    httpClient.DefaultRequestHeaders.Clear();
-                    httpClient.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-                    httpClient.DefaultRequestHeaders.Add("accept", "*/*");
-
-                    var docsUrl  = $"{dmsBaseUrl}/api/Document/claimdocumenturls?claimId={Uri.EscapeDataString(cId)}&claimExtNo={Uri.EscapeDataString(sNo)}";
-                    var docsTask = httpClient.GetAsync(docsUrl);
-                    docsTask.Wait();
-                    var docsResp = docsTask.Result;
-                    if (!docsResp.IsSuccessStatusCode)
+                    wc.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + token;
+                    wc.Headers[System.Net.HttpRequestHeader.Accept]        = "*/*";
+                    string docsUrl = string.Format("{0}/api/Document/claimdocumenturls?claimId={1}&claimExtNo={2}",
+                        dmsBaseUrl, Uri.EscapeDataString(cId), Uri.EscapeDataString(sNo));
+                    try
                     {
+                        docsJson = wc.DownloadString(docsUrl);
+                    }
+                    catch (System.Net.WebException wex)
+                    {
+                        string errBody = wex.Response != null
+                            ? new System.IO.StreamReader(wex.Response.GetResponseStream()).ReadToEnd()
+                            : wex.Message;
                         res.Success = false;
-                        res.Message = "DMS document list failed: " + docsResp.StatusCode;
+                        res.Message = "DMS document list failed: " + errBody;
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
-                    var docsJson = docsResp.Content.ReadAsStringAsync().Result;
-                    var docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
-
-                    if (docsList == null || docsList.Count == 0)
-                    {
-                        res.Success = false;
-                        res.Message = "No documents found in DMS for claimId=" + cId;
-                        return Json(res, JsonRequestBehavior.AllowGet);
-                    }
-
-                    // Step 3: Find medical bill document
-                    // Look for hospital bill / medical bill document type
-                    dynamic medDoc = null;
-                    string[] medKeywords = { "hospital bill", "medical bill", "bill", "invoice", "hospitalbill" };
-                    foreach (var doc in docsList)
-                    {
-                        string docType = (doc.documentType ?? doc.DocumentType ?? doc.docType ?? doc.DocType ?? "").ToString().ToLower();
-                        string docName = (doc.documentName ?? doc.DocumentName ?? doc.fileName ?? doc.FileName ?? "").ToString().ToLower();
-                        bool isMatch = false;
-                        foreach (var kw in medKeywords)
-                        {
-                            if (docType.Contains(kw) || docName.Contains(kw)) { isMatch = true; break; }
-                        }
-                        if (isMatch) { medDoc = doc; break; }
-                    }
-
-                    // Fallback: use first document if no match
-                    if (medDoc == null) medDoc = docsList[0];
-
-                    string docUrl      = (medDoc.url ?? medDoc.Url ?? medDoc.documentUrl ?? medDoc.DocumentUrl ?? "").ToString();
-                    string docFileName = (medDoc.documentName ?? medDoc.DocumentName ?? medDoc.fileName ?? medDoc.FileName ?? "medical-bill.pdf").ToString();
-                    if (!docFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-                        docFileName += ".pdf";
-
-                    if (string.IsNullOrWhiteSpace(docUrl))
-                    {
-                        res.Success = false;
-                        res.Message = "Document URL is empty in DMS response: " + docsJson;
-                        return Json(res, JsonRequestBehavior.AllowGet);
-                    }
-
-                    // Step 4: Download PDF
-                    var pdfTask = httpClient.GetByteArrayAsync(docUrl);
-                    pdfTask.Wait();
-                    byte[] pdfBytes = pdfTask.Result;
-
-                    res.Success = true;
-                    res.Message = "Medical bill loaded from DMS.";
-                    res.Data    = new { fileName = docFileName, base64Content = Convert.ToBase64String(pdfBytes) };
-                    var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                    return Content(s.Serialize(res), "application/json");
                 }
+
+                var docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
+                if (docsList == null || docsList.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "No documents found in DMS for claimId=" + cId + ". Response: " + docsJson;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 3: Find medical bill document
+                dynamic medDoc = null;
+                string[] medKeywords = { "hospital bill", "medical bill", "bill", "invoice", "hospitalbill" };
+                foreach (var doc in docsList)
+                {
+                    string docType = (doc.documentType ?? doc.DocumentType ?? doc.docType ?? doc.DocType ?? "").ToString().ToLower();
+                    string docName = (doc.documentName ?? doc.DocumentName ?? doc.fileName ?? doc.FileName ?? "").ToString().ToLower();
+                    bool isMatch = false;
+                    foreach (var kw in medKeywords)
+                    {
+                        if (docType.Contains(kw) || docName.Contains(kw)) { isMatch = true; break; }
+                    }
+                    if (isMatch) { medDoc = doc; break; }
+                }
+                if (medDoc == null) medDoc = docsList[0];
+
+                string docUrl      = (medDoc.url ?? medDoc.Url ?? medDoc.documentUrl ?? medDoc.DocumentUrl ?? "").ToString();
+                string docFileName = (medDoc.documentName ?? medDoc.DocumentName ?? medDoc.fileName ?? medDoc.FileName ?? "medical-bill.pdf").ToString();
+                if (!docFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                    docFileName += ".pdf";
+
+                if (string.IsNullOrWhiteSpace(docUrl))
+                {
+                    res.Success = false;
+                    res.Message = "Document URL empty. DMS response: " + docsJson;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 4: Download PDF
+                byte[] pdfBytes;
+                using (var wcPdf = new System.Net.WebClient())
+                {
+                    wcPdf.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + token;
+                    pdfBytes = wcPdf.DownloadData(docUrl);
+                }
+
+                res.Success = true;
+                res.Message = "Medical bill loaded from DMS.";
+                res.Data    = new { fileName = docFileName, base64Content = Convert.ToBase64String(pdfBytes) };
+                var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                return Content(s.Serialize(res), "application/json");
             }
             catch (Exception ex)
             {
