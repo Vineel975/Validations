@@ -8394,7 +8394,12 @@ namespace Enrollment.Controllers
             }
         }
 
-        public ActionResult GetMedicalBillDocument()
+        /// <summary>
+        /// Fetches medical bill PDF from DMS API using claimId + slNo.
+        /// Token is returned as raw JWT string.
+        /// Documents response may be plain text "No documents found" if wrong claimId format.
+        /// </summary>
+        public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
             var res = new ApiResponse<object>();
             try
@@ -8405,24 +8410,145 @@ namespace Enrollment.Controllers
                     res.Message = "Session expired.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-                string filePath = System.Configuration.ConfigurationManager
-                                        .AppSettings["MedicalBillDocumentPath"];
-                if (string.IsNullOrWhiteSpace(filePath))
+
+                string cId = claimId ?? "";
+                string sNo = slNo   ?? "1";
+
+                if (string.IsNullOrWhiteSpace(cId))
                 {
                     res.Success = false;
-                    res.Message = "MedicalBillDocumentPath is not configured in Web.config.";
+                    res.Message = "ClaimID is required.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-                if (!System.IO.File.Exists(filePath))
+
+                string dmsBaseUrl = "https://nxtgen-dms-api-qa.fhpl.net";
+                string clientId   = "Test";
+                string apiKey     = "WWGurkkutK8F5Lpf9WGnnOUAFePbSObpi4m2Pq8w6xk=";
+
+                // Force TLS 1.2
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.SecurityProtocolType.Tls12 |
+                    System.Net.SecurityProtocolType.Tls11 |
+                    System.Net.SecurityProtocolType.Tls;
+                System.Net.ServicePointManager.ServerCertificateValidationCallback =
+                    (sender, cert, chain, errors) => true;
+
+                // Step 1: Generate token — exact same pattern as GetDMSToken() in ViewModel
+                string token = "";
+                {
+                    var client = new System.Net.Http.HttpClient();
+                    string tokenApiUrl = dmsBaseUrl + "/api/Auth/generatetoken";
+                    var jsonDoc = Newtonsoft.Json.JsonConvert.SerializeObject(new { clientId, apiKey });
+                    var request = new System.Net.Http.HttpRequestMessage(
+                        System.Net.Http.HttpMethod.Post, tokenApiUrl);
+                    var content = new System.Net.Http.StringContent(jsonDoc, null, "application/json");
+                    request.Content = content;
+                    var response = client.SendAsync(request).GetAwaiter().GetResult();
+                    if (response.IsSuccessStatusCode)
+                        token = response.Content.ReadAsStringAsync().Result.Trim().Trim('"');
+                }
+
+                if (string.IsNullOrWhiteSpace(token))
                 {
                     res.Success = false;
-                    res.Message = "Medical bill not found at: " + filePath;
+                    res.Message = "DMS token is empty.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-                byte[] bytes = System.IO.File.ReadAllBytes(filePath);
-                res.Success  = true;
-                res.Message  = "Medical bill loaded.";
-                res.Data     = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
+
+                // Step 2: Get document URLs — exact same pattern as MedicalScrutinyViewModel.GetDmsDocsurl
+                string docsJson = "";
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    string param   = "?claimId=" + cId + "&claimExtNo=" + sNo;
+                    Uri completeUri = new Uri(dmsBaseUrl + "/API/Document/claimdocumenturls" + param);
+                    client.DefaultRequestHeaders.Accept.Clear();
+                    client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+                    System.Net.Http.HttpResponseMessage apiResponse =
+                        client.GetAsync(completeUri).GetAwaiter().GetResult();
+                    if (!apiResponse.IsSuccessStatusCode)
+                    {
+                        res.Success = false;
+                        res.Message = "DMS docs failed: " + apiResponse.StatusCode;
+                        return Json(res, JsonRequestBehavior.AllowGet);
+                    }
+                    docsJson = apiResponse.Content.ReadAsStringAsync().Result;
+                }
+
+                // Check if response is valid JSON array
+                string docsJsonTrimmed = (docsJson ?? "").Trim();
+                if (!docsJsonTrimmed.StartsWith("[") && !docsJsonTrimmed.StartsWith("{"))
+                {
+                    res.Success = false;
+                    res.Message = "DMS returned no documents for claimId=" + cId + ". Response: " + docsJson;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 3: Parse document list
+                List<dynamic> docsList = null;
+                try
+                {
+                    if (docsJsonTrimmed.StartsWith("["))
+                        docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
+                    else
+                    {
+                        dynamic wrapper = Newtonsoft.Json.JsonConvert.DeserializeObject(docsJson);
+                        var inner = wrapper?.data ?? wrapper?.Data ?? wrapper?.documents
+                                 ?? wrapper?.Documents ?? wrapper?.result ?? wrapper?.Result;
+                        if (inner != null)
+                            docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(inner.ToString());
+                    }
+                }
+                catch { }
+
+                if (docsList == null || docsList.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "No documents parsed. Raw: " + docsJson;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 4: Find medical bill — prefer by keyword, fallback to first
+                dynamic medDoc = null;
+                string[] medKeywords = { "hospital bill", "medical bill", "bill", "invoice", "hospitalbill" };
+                foreach (var doc in docsList)
+                {
+                    string docType = (doc.documentType ?? doc.DocumentType ?? doc.docType ?? "").ToString().ToLower();
+                    string docName = (doc.documentName ?? doc.DocumentName ?? doc.fileName ?? doc.FileName ?? "").ToString().ToLower();
+                    foreach (var kw in medKeywords)
+                        if (docType.Contains(kw) || docName.Contains(kw)) { medDoc = doc; break; }
+                    if (medDoc != null) break;
+                }
+                if (medDoc == null) medDoc = docsList[0];
+
+                // Fields confirmed from DocumentUrlresponse class: documentUrl, documentName
+                string docUrl      = (medDoc.documentUrl ?? medDoc.DocumentUrl ?? medDoc.url ?? medDoc.Url ?? "").ToString();
+                string docFileName = (medDoc.documentName ?? medDoc.DocumentName ?? medDoc.fileName ?? medDoc.FileName ?? "medical-bill.pdf").ToString();
+                if (!docFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                    docFileName += ".pdf";
+
+                if (string.IsNullOrWhiteSpace(docUrl))
+                {
+                    res.Success = false;
+                    res.Message = "Document URL empty. Response: " + docsJson;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 5: Download PDF
+                byte[] pdfBytes;
+                using (var wcPdf = new System.Net.WebClient())
+                {
+                    // Try without auth first (pre-signed URL), fallback with token
+                    try { pdfBytes = wcPdf.DownloadData(docUrl); }
+                    catch
+                    {
+                        wcPdf.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + token;
+                        pdfBytes = wcPdf.DownloadData(docUrl);
+                    }
+                }
+
+                res.Success = true;
+                res.Message = "Medical bill loaded from DMS.";
+                res.Data    = new { fileName = docFileName, base64Content = Convert.ToBase64String(pdfBytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -8430,7 +8556,7 @@ namespace Enrollment.Controllers
             {
                 Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
                 res.Success = false;
-                res.Message = "Error loading medical bill: " + ex.Message;
+                res.Message = "Error loading medical bill from DMS: " + ex.Message;
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
         }
