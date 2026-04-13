@@ -7731,23 +7731,43 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Build S3 key — same logic as ClaimAttachment_Retrieve:
-                // strip drive prefix using DMSDirectoryName, use remainder as S3 key
-                var providerCtrl = new ProviderController();
+                // Build S3 key — strip drive prefix, use remainder as S3 key
+                // Use explicit credentials from Web.config (no IAM role on this server)
+                string accessKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocaccesskey"];
+                string secretKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocsecretkey"];
+                var s3Creds     = new Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey);
+                var s3Region    = Amazon.RegionEndpoint.APSouth1; // ap-south-1 (Mumbai) — typical for FHPL
+
                 var pdfBytesList = new System.Collections.Generic.List<byte[]>();
 
                 foreach (var entry in pdfEntries)
                 {
                     string path = entry.Item1 + entry.Item2;
-                    string bucketName = path.Contains("/FAXServer/") ? 
-                        System.Configuration.ConfigurationManager.AppSettings["S3FaxserverBucketName"] : 
+                    string bucketName = path.Contains("/FAXServer/") ?
+                        System.Configuration.ConfigurationManager.AppSettings["S3FaxserverBucketName"] :
                         s3Bucket;
 
                     // Strip drive prefixes e.g. D://, E://, C://
                     foreach (var drivePrefix in directoryName.Split(','))
                         path = path.Replace(drivePrefix, "");
 
-                    string presignedUrl = providerCtrl.GeneratePresignedURL(bucketName, path, 15);
+                    // Generate presigned URL using explicit credentials
+                    string presignedUrl = "";
+                    try
+                    {
+                        using (var s3Client = new Amazon.S3.AmazonS3Client(s3Creds, s3Region))
+                        {
+                            var request = new Amazon.S3.Model.GetPreSignedUrlRequest
+                            {
+                                BucketName = bucketName,
+                                Key        = path,
+                                Expires    = DateTime.Now.AddMinutes(15)
+                            };
+                            presignedUrl = s3Client.GetPreSignedURL(request);
+                        }
+                    }
+                    catch { continue; }
+
                     if (string.IsNullOrWhiteSpace(presignedUrl)) continue;
 
                     // Download PDF from S3
