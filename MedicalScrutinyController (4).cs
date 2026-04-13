@@ -7779,13 +7779,23 @@ namespace Enrollment.Controllers
                             pdfBytesList.Add(pdfBytes);
                         }
                     }
-                    catch { /* skip files that fail to download */ }
+                    catch (Exception dlEx)
+                    {
+                        // Log the key and error for debugging
+                        pdfBytesList.Add(null); // placeholder to track failure
+                        res.Message = "S3 key tried: " + path + " | Error: " + dlEx.Message;
+                    }
                 }
+
+                // Remove null placeholders from failed downloads
+                pdfBytesList.RemoveAll(x => x == null);
 
                 if (pdfBytesList.Count == 0)
                 {
+                    // res.Message already has the last S3 key + error from debug above
                     res.Success = false;
-                    res.Message = "Files found in DB but could not download from S3 for claimId=" + cId;
+                    if (string.IsNullOrWhiteSpace(res.Message))
+                        res.Message = "Files found in DB but could not download from S3 for claimId=" + cId;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
