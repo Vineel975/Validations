@@ -7661,12 +7661,161 @@ namespace Enrollment.Controllers
             }
         }
         /// <summary>
-        /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
-        /// GET /MedicalScrutiny/GetMedicalBillDocument
+        /// Fetches all PDF documents for a claim from DMSFileinfo_Claims,
+        /// generates S3 presigned URLs (same pattern as ClaimAttachment_Retrieve),
+        /// downloads and merges into single PDF returned as base64.
         /// </summary>
-        [HttpGet]
-        /// <summary>
-        /// Returns patient/claim field values needed by ClaimAI for validation.
+        public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
+        {
+            var res = new ApiResponse<object>();
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                {
+                    res.Success = false; res.ErrorCode = "ErrorCode#1";
+                    res.Message = "Session expired.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                string cId = (claimId ?? "").Trim();
+                string sNo = (slNo ?? "1").Trim();
+
+                if (string.IsNullOrWhiteSpace(cId))
+                {
+                    res.Success = false;
+                    res.Message = "ClaimID is required.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Get connection string
+                string connStr = System.Configuration.ConfigurationManager
+                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
+                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        connStr, "provider connection string=\"([^\"]+)\"",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                }
+
+                string directoryName = System.Configuration.ConfigurationManager
+                    .AppSettings["DMSDirectoryName"] ?? "E://,D://,C://";
+                string s3Bucket = System.Configuration.ConfigurationManager
+                    .AppSettings["S3SpectraBucketName"] ?? "prod-s3-spectra";
+
+                // Query DMSFileinfo_Claims - same as ClaimAttachment_Retrieve
+                var pdfEntries = new System.Collections.Generic.List<System.Tuple<string,string>>();
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText =
+                        "SELECT SystemFileName, FilePath FROM DMSFileinfo_Claims " +
+                        "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
+                    cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            string fp  = rdr["FilePath"].ToString();
+                            string sys = rdr["SystemFileName"].ToString();
+                            pdfEntries.Add(System.Tuple.Create(fp, sys));
+                        }
+                    }
+                }
+
+                if (pdfEntries.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "No documents found in DB for claimId=" + cId + " slNo=" + sNo;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Build S3 key — same logic as ClaimAttachment_Retrieve:
+                // strip drive prefix using DMSDirectoryName, use remainder as S3 key
+                var providerCtrl = new ProviderController();
+                var pdfBytesList = new System.Collections.Generic.List<byte[]>();
+
+                foreach (var entry in pdfEntries)
+                {
+                    string path = entry.Item1 + entry.Item2;
+                    string bucketName = path.Contains("/FAXServer/") ? 
+                        System.Configuration.ConfigurationManager.AppSettings["S3FaxserverBucketName"] : 
+                        s3Bucket;
+
+                    // Strip drive prefixes e.g. D://, E://, C://
+                    foreach (var drivePrefix in directoryName.Split(','))
+                        path = path.Replace(drivePrefix, "");
+
+                    string presignedUrl = providerCtrl.GeneratePresignedURL(bucketName, path, 15);
+                    if (string.IsNullOrWhiteSpace(presignedUrl)) continue;
+
+                    // Download PDF from S3
+                    try
+                    {
+                        using (var wc = new System.Net.WebClient())
+                        {
+                            byte[] pdfBytes = wc.DownloadData(presignedUrl);
+                            pdfBytesList.Add(pdfBytes);
+                        }
+                    }
+                    catch { /* skip files that fail to download */ }
+                }
+
+                if (pdfBytesList.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "Files found in DB but could not download from S3 for claimId=" + cId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Merge all PDFs
+                byte[] mergedBytes;
+                if (pdfBytesList.Count == 1)
+                {
+                    mergedBytes = pdfBytesList[0];
+                }
+                else
+                {
+                    try
+                    {
+                        using (var ms = new System.IO.MemoryStream())
+                        {
+                            var document = new iTextSharp.text.Document();
+                            var writer = new iTextSharp.text.pdf.PdfCopy(document, ms);
+                            document.Open();
+                            foreach (var pdfBytes in pdfBytesList)
+                            {
+                                var reader = new iTextSharp.text.pdf.PdfReader(pdfBytes);
+                                for (int p = 1; p <= reader.NumberOfPages; p++)
+                                    writer.AddPage(writer.GetImportedPage(reader, p));
+                                reader.Close();
+                            }
+                            document.Close();
+                            mergedBytes = ms.ToArray();
+                        }
+                    }
+                    catch
+                    {
+                        mergedBytes = pdfBytesList[0];
+                    }
+                }
+
+                string fileName = cId + "-" + sNo + "-medical-bill.pdf";
+                res.Success = true;
+                res.Message = "Medical bill loaded from S3. Files: " + pdfBytesList.Count;
+                res.Data = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
+                var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                return Content(s.Serialize(res), "application/json");
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                res.Success = false;
+                res.Message = "Error loading medical bill: " + ex.Message;
+                return Json(res, JsonRequestBehavior.AllowGet);
+            }
+        }
         /// Called synchronously from JS before submitting to Convex, so it must be fast.
         ///
         /// Returns: { age, hospitalName, documentDate, dischargeDate }
@@ -8395,9 +8544,7 @@ namespace Enrollment.Controllers
         }
 
         /// <summary>
-        /// Fetches all PDF documents for a claim from DMSFileinfo_Claims DB table,
-        /// searches across configured drives (DMSDirectoryName), merges into one PDF.
-        /// Uses Web.config: DMSApiURL, ClientID, DMSAPIKey, DMSDirectoryName.
+        /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
         /// </summary>
         public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
@@ -8410,168 +8557,24 @@ namespace Enrollment.Controllers
                     res.Message = "Session expired.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-
-                string cId = (claimId ?? "").Trim();
-                string sNo = (slNo ?? "1").Trim();
-
-                if (string.IsNullOrWhiteSpace(cId))
+                string filePath = System.Configuration.ConfigurationManager
+                                        .AppSettings["MedicalBillDocumentPath"];
+                if (string.IsNullOrWhiteSpace(filePath))
                 {
                     res.Success = false;
-                    res.Message = "ClaimID is required.";
+                    res.Message = "MedicalBillDocumentPath is not configured in Web.config.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-
-                // Get connection string
-                string connStr = System.Configuration.ConfigurationManager
-                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
-                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
-                {
-                    var m = System.Text.RegularExpressions.Regex.Match(
-                        connStr, "provider connection string=\"([^\"]+)\"",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
-                }
-
-                // Get configured drives to search (DMSDirectoryName = "E://,D://,C://,F://,G://")
-                string dmsDirectories = System.Configuration.ConfigurationManager
-                    .AppSettings["DMSDirectoryName"] ?? "D://,C://,E://";
-                string[] drives = dmsDirectories.Split(new char[]{','}, StringSplitOptions.RemoveEmptyEntries);
-
-                // Query DB for all PDF files for this claim+slno
-                var dbFiles = new System.Collections.Generic.List<System.Tuple<string,string,string>>();
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandText =
-                        "SELECT Name, SystemFileName, FilePath, DNSName FROM DMSFileinfo_Claims " +
-                        "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
-                    cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        while (rdr.Read())
-                        {
-                            string dbPath   = rdr["FilePath"].ToString().Trim();
-                            string sysName  = rdr["SystemFileName"].ToString().Trim();
-                            string dnsName  = rdr["DNSName"] == DBNull.Value ? "" : rdr["DNSName"].ToString().Trim();
-                            dbFiles.Add(System.Tuple.Create(dbPath, sysName, dnsName));
-                        }
-                    }
-                }
-
-                if (dbFiles.Count == 0)
+                if (!System.IO.File.Exists(filePath))
                 {
                     res.Success = false;
-                    res.Message = "No documents found in DB for claimId=" + cId + " slNo=" + sNo;
+                    res.Message = "Medical bill not found at: " + filePath;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-
-                // Find actual files on disk — try each configured drive
-                var foundFiles = new System.Collections.Generic.List<string>();
-                foreach (var entry in dbFiles)
-                {
-                    string dbPath  = entry.Item1;
-                    string sysName = entry.Item2;
-                    string dnsName = entry.Item3;
-                    bool found = false;
-
-                    // Try each drive substitution
-                    foreach (string drive in drives)
-                    bool found = false;
-
-                    // Priority 1: Use DNSName from DB as UNC server (most reliable)
-                    if (!string.IsNullOrWhiteSpace(dnsName))
-                    {
-                        string relPath = System.Text.RegularExpressions.Regex.Replace(dbPath, @"^[A-Za-z]:[/\\]+", "");
-                        relPath = relPath.Replace('/', System.IO.Path.DirectorySeparatorChar).TrimEnd(System.IO.Path.DirectorySeparatorChar);
-                        string uncPath = @"\\" + dnsName + @"\" + relPath.Replace("DMSDocuments", "DMSDocuments") + @"\" + sysName;
-                        if (System.IO.File.Exists(uncPath))
-                        {
-                            foundFiles.Add(uncPath);
-                            found = true;
-                        }
-                    }
-
-                    // Priority 2: Try each configured drive from DMSDirectoryName
-                    if (!found)
-                    {
-                        foreach (string drive in drives)
-                        {
-                            string driveTrimmed = drive.Trim();
-                            string relPath = System.Text.RegularExpressions.Regex.Replace(dbPath, @"^[A-Za-z]:[/\\]+", "");
-                            relPath = relPath.Replace('/', System.IO.Path.DirectorySeparatorChar).TrimEnd(System.IO.Path.DirectorySeparatorChar);
-                            string fullPath;
-                            if (driveTrimmed.StartsWith(@"\\") || driveTrimmed.StartsWith("//"))
-                            {
-                                fullPath = driveTrimmed.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar + relPath + System.IO.Path.DirectorySeparatorChar + sysName;
-                            }
-                            else
-                            {
-                                string dl = driveTrimmed.Length >= 1 ? driveTrimmed.Substring(0,1) + ":" : driveTrimmed;
-                                fullPath = dl + System.IO.Path.DirectorySeparatorChar + relPath + System.IO.Path.DirectorySeparatorChar + sysName;
-                            }
-                            if (System.IO.File.Exists(fullPath))
-                            {
-                                foundFiles.Add(fullPath);
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!found)
-                    {
-                        string fp = dbPath.Replace("//", "\\").Replace("/", "\\").TrimEnd('\\');
-                        string fullPath2 = fp + "\\" + sysName;
-                        if (System.IO.File.Exists(fullPath2))
-                            foundFiles.Add(fullPath2);
-                    }
-
-                }
-                if (foundFiles.Count == 0)
-                {
-                    res.Success = false;
-                    res.Message = "Documents in DB=" + dbFiles.Count + " but not on disk. DNSName=" + string.Join(",", dbFiles.Select(x => x.Item3).Distinct().ToArray()) + " FilePath sample=" + (dbFiles.Count > 0 ? dbFiles[0].Item1 : "") + " Drives=" + dmsDirectories;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                // Merge all PDFs
-                byte[] mergedBytes = null;
-                if (foundFiles.Count == 1)
-                {
-                    mergedBytes = System.IO.File.ReadAllBytes(foundFiles[0]);
-                }
-                else
-                {
-                    try
-                    {
-                        using (var ms = new System.IO.MemoryStream())
-                        {
-                            var document = new iTextSharp.text.Document();
-                            var writer = new iTextSharp.text.pdf.PdfCopy(document, ms);
-                            document.Open();
-                            foreach (var f in foundFiles)
-                            {
-                                var reader = new iTextSharp.text.pdf.PdfReader(f);
-                                for (int p = 1; p <= reader.NumberOfPages; p++)
-                                    writer.AddPage(writer.GetImportedPage(reader, p));
-                                reader.Close();
-                            }
-                            document.Close();
-                            mergedBytes = ms.ToArray();
-                        }
-                    }
-                    catch
-                    {
-                        mergedBytes = System.IO.File.ReadAllBytes(foundFiles[0]);
-                    }
-                }
-
-                string fileName = cId + "-" + sNo + "-medical-bill.pdf";
-                res.Success = true;
-                res.Message = "Medical bill loaded. Files merged: " + foundFiles.Count;
-                if (mergedBytes == null) mergedBytes = new byte[0];
-                res.Data = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
+                byte[] bytes = System.IO.File.ReadAllBytes(filePath);
+                res.Success  = true;
+                res.Message  = "Medical bill loaded.";
+                res.Data     = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
