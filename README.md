@@ -15,3 +15,17 @@ function OpenTariffPopUp(probableDOA, prcNo) {
         window.open(url, "width=1000, height=600");
     }
 }
+
+-- Find what PRCNo is for our claim's provider
+SELECT c.ID, c.ProviderID, c.MOUID, p.PRCNo, p.Name as ProviderName
+FROM Claims c
+JOIN Mst_Provider p ON p.ID = c.ProviderID
+WHERE c.ID = 26040206200
+
+-- Find tariff docs linked to that PRCNo
+SELECT TOP 5 * FROM DMSFileinfo_Provider 
+WHERE EntityID = (
+    SELECT p.ID FROM Mst_Provider p
+    JOIN Claims c ON c.ProviderID = p.ID
+    WHERE c.ID = 26040206200
+)
