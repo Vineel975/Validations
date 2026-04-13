@@ -8476,16 +8476,14 @@ namespace Enrollment.Controllers
                     // Try each drive substitution
                     foreach (string drive in drives)
                     {
-                        string normalDrive = drive.Trim().TrimEnd('/').TrimEnd('\');
-                        // Extract relative path after the drive root (e.g. D:// → DMSDocuments/...)
+                        string normalDrive = drive.Trim().TrimEnd('/').TrimEnd('\\');
                         string relativePath = dbPath;
-                        // Remove any leading drive pattern like X:// or X:/
                         relativePath = System.Text.RegularExpressions.Regex.Replace(
-                            relativePath, @"^[A-Za-z]:[/\]+", "");
-                        // Normalize slashes
+                            relativePath, "^[A-Za-z]:[/\\\\]+", "");
                         relativePath = relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar)
                                                    .TrimEnd(System.IO.Path.DirectorySeparatorChar);
-                        string fullDir  = normalDrive.Replace("//",":").Replace("/","\") + "\" + relativePath;
+                        string driveLetter = normalDrive.Length >= 2 ? normalDrive.Substring(0, 1) + ":" : normalDrive;
+                        string fullDir  = driveLetter + System.IO.Path.DirectorySeparatorChar + relativePath;
                         string fullPath = System.IO.Path.Combine(fullDir, sysName);
                         if (System.IO.File.Exists(fullPath))
                         {
@@ -8496,13 +8494,11 @@ namespace Enrollment.Controllers
                     }
                     if (!found)
                     {
-                        // Last attempt: use path exactly as stored in DB, normalized
-                        string fp = dbPath.Replace("//", "\").Replace("/", "\").TrimEnd('\');
-                        string fullPath = fp + "\" + sysName;
-                        if (System.IO.File.Exists(fullPath))
-                            foundFiles.Add(fullPath);
+                        string fp = dbPath.Replace("//", "\\").Replace("/", "\\").TrimEnd('\\');
+                        string fullPath2 = fp + "\\" + sysName;
+                        if (System.IO.File.Exists(fullPath2))
+                            foundFiles.Add(fullPath2);
                     }
-                }
 
                 if (foundFiles.Count == 0)
                 {
