@@ -8543,48 +8543,5 @@ namespace Enrollment.Controllers
             }
         }
 
-        /// <summary>
-        /// Returns medical bill PDF as base64 from local path (Web.config: MedicalBillDocumentPath).
-        /// </summary>
-        public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
-        {
-            var res = new ApiResponse<object>();
-            try
-            {
-                if (Session[SessionValue.UserRegionID] == null)
-                {
-                    res.Success = false; res.ErrorCode = "ErrorCode#1";
-                    res.Message = "Session expired.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-                string filePath = System.Configuration.ConfigurationManager
-                                        .AppSettings["MedicalBillDocumentPath"];
-                if (string.IsNullOrWhiteSpace(filePath))
-                {
-                    res.Success = false;
-                    res.Message = "MedicalBillDocumentPath is not configured in Web.config.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-                if (!System.IO.File.Exists(filePath))
-                {
-                    res.Success = false;
-                    res.Message = "Medical bill not found at: " + filePath;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-                byte[] bytes = System.IO.File.ReadAllBytes(filePath);
-                res.Success  = true;
-                res.Message  = "Medical bill loaded.";
-                res.Data     = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
-                var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                return Content(s.Serialize(res), "application/json");
-            }
-            catch (Exception ex)
-            {
-                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
-                res.Success = false;
-                res.Message = "Error loading medical bill: " + ex.Message;
-                return Json(res, JsonRequestBehavior.AllowGet);
-            }
-        }
     }
 }
