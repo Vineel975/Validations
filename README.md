@@ -1,1 +1,1 @@
-Could not load medical bill: Files found in DB but could not download from S3 for claimId=26040206200
+[ClaimAI] GetMedicalBillDocument response: false S3 key tried: DMSDocuments/2026/2026-4/2026-4-2/26040206200-1/bbdcc440-339b-4046-b572-f146bfe68984_134196090511792392.pdf | Error: The remote server returned an error: (403) Forbidden
