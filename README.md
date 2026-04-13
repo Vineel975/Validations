@@ -1,1 +1,1 @@
-[ClaimAI] GetMedicalBillDocument response: false Documents found in DB (5) but files not accessible on disk. Check DMSDirectoryName config and file server access.
+dir D:\DMSDocuments\2026\2026-4\2026-4-2\26040206200-1\
