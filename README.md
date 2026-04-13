@@ -1,1 +1,1 @@
-[ClaimAI] GetMedicalBillDocument response: false Error loading medical bill: Unable to get IAM security credentials from EC2 Instance Metadata Service.
+SELECT * FROM appSettings WHERE [Key] LIKE '%region%' OR [Key] LIKE '%Region%'
