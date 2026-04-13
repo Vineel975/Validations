@@ -8509,7 +8509,7 @@ namespace Enrollment.Controllers
                 }
 
                 // Merge all PDFs
-                byte[] mergedBytes;
+                byte[] mergedBytes = null;
                 if (foundFiles.Count == 1)
                 {
                     mergedBytes = System.IO.File.ReadAllBytes(foundFiles[0]);
@@ -8543,6 +8543,7 @@ namespace Enrollment.Controllers
                 string fileName = cId + "-" + sNo + "-medical-bill.pdf";
                 res.Success = true;
                 res.Message = "Medical bill loaded. Files merged: " + foundFiles.Count;
+                if (mergedBytes == null) mergedBytes = new byte[0];
                 res.Data = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
