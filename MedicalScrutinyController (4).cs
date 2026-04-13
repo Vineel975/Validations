@@ -8444,6 +8444,10 @@ namespace Enrollment.Controllers
                         while (rdr.Read())
                         {
                             string fp = rdr["FilePath"].ToString().Trim();
+                            // Remap DB path root to IIS-accessible path if configured
+                            string dmsRootDb  = System.Configuration.ConfigurationManager.AppSettings["DMSRootPathDB"]  ?? "D://DMSDocuments";
+                            string dmsRootIIS = System.Configuration.ConfigurationManager.AppSettings["DMSRootPathIIS"] ?? "D:\\DMSDocuments";
+                            fp = fp.Replace(dmsRootDb, dmsRootIIS);
                             fp = System.Text.RegularExpressions.Regex.Replace(fp, @"/{2,}", "/");
                             fp = fp.Replace("/", System.IO.Path.DirectorySeparatorChar.ToString()).TrimEnd(System.IO.Path.DirectorySeparatorChar);
                             string sysName = rdr["SystemFileName"].ToString().Trim();
