@@ -8438,22 +8438,23 @@ namespace Enrollment.Controllers
                 string[] drives = dmsDirectories.Split(new char[]{','}, StringSplitOptions.RemoveEmptyEntries);
 
                 // Query DB for all PDF files for this claim+slno
-                var dbFiles = new System.Collections.Generic.List<System.Tuple<string,string>>();
+                var dbFiles = new System.Collections.Generic.List<System.Tuple<string,string,string>>();
                 using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     var cmd = conn.CreateCommand();
                     cmd.CommandText =
-                        "SELECT Name, SystemFileName, FilePath FROM DMSFileinfo_Claims " +
+                        "SELECT Name, SystemFileName, FilePath, DNSName FROM DMSFileinfo_Claims " +
                         "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
                     cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
                     using (var rdr = cmd.ExecuteReader())
                     {
                         while (rdr.Read())
                         {
-                            string dbPath  = rdr["FilePath"].ToString().Trim();
-                            string sysName = rdr["SystemFileName"].ToString().Trim();
-                            dbFiles.Add(System.Tuple.Create(dbPath, sysName));
+                            string dbPath   = rdr["FilePath"].ToString().Trim();
+                            string sysName  = rdr["SystemFileName"].ToString().Trim();
+                            string dnsName  = rdr["DNSName"] == DBNull.Value ? "" : rdr["DNSName"].ToString().Trim();
+                            dbFiles.Add(System.Tuple.Create(dbPath, sysName, dnsName));
                         }
                     }
                 }
@@ -8469,29 +8470,55 @@ namespace Enrollment.Controllers
                 var foundFiles = new System.Collections.Generic.List<string>();
                 foreach (var entry in dbFiles)
                 {
-                    string dbPath  = entry.Item1; // e.g. D://DMSDocuments/2026/2026-4/2026-4-2/26040206200-1/
+                    string dbPath  = entry.Item1;
                     string sysName = entry.Item2;
+                    string dnsName = entry.Item3;
                     bool found = false;
 
                     // Try each drive substitution
                     foreach (string drive in drives)
+                    bool found = false;
+
+                    // Priority 1: Use DNSName from DB as UNC server (most reliable)
+                    if (!string.IsNullOrWhiteSpace(dnsName))
                     {
-                        string normalDrive = drive.Trim().TrimEnd('/').TrimEnd('\\');
-                        string relativePath = dbPath;
-                        relativePath = System.Text.RegularExpressions.Regex.Replace(
-                            relativePath, "^[A-Za-z]:[/\\\\]+", "");
-                        relativePath = relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar)
-                                                   .TrimEnd(System.IO.Path.DirectorySeparatorChar);
-                        string driveLetter = normalDrive.Length >= 2 ? normalDrive.Substring(0, 1) + ":" : normalDrive;
-                        string fullDir  = driveLetter + System.IO.Path.DirectorySeparatorChar + relativePath;
-                        string fullPath = System.IO.Path.Combine(fullDir, sysName);
-                        if (System.IO.File.Exists(fullPath))
+                        string relPath = System.Text.RegularExpressions.Regex.Replace(dbPath, @"^[A-Za-z]:[/\\]+", "");
+                        relPath = relPath.Replace('/', System.IO.Path.DirectorySeparatorChar).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                        string uncPath = @"\\" + dnsName + @"\" + relPath.Replace("DMSDocuments", "DMSDocuments") + @"\" + sysName;
+                        if (System.IO.File.Exists(uncPath))
                         {
-                            foundFiles.Add(fullPath);
+                            foundFiles.Add(uncPath);
                             found = true;
-                            break;
                         }
                     }
+
+                    // Priority 2: Try each configured drive from DMSDirectoryName
+                    if (!found)
+                    {
+                        foreach (string drive in drives)
+                        {
+                            string driveTrimmed = drive.Trim();
+                            string relPath = System.Text.RegularExpressions.Regex.Replace(dbPath, @"^[A-Za-z]:[/\\]+", "");
+                            relPath = relPath.Replace('/', System.IO.Path.DirectorySeparatorChar).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                            string fullPath;
+                            if (driveTrimmed.StartsWith(@"\\") || driveTrimmed.StartsWith("//"))
+                            {
+                                fullPath = driveTrimmed.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar + relPath + System.IO.Path.DirectorySeparatorChar + sysName;
+                            }
+                            else
+                            {
+                                string dl = driveTrimmed.Length >= 1 ? driveTrimmed.Substring(0,1) + ":" : driveTrimmed;
+                                fullPath = dl + System.IO.Path.DirectorySeparatorChar + relPath + System.IO.Path.DirectorySeparatorChar + sysName;
+                            }
+                            if (System.IO.File.Exists(fullPath))
+                            {
+                                foundFiles.Add(fullPath);
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+
                     if (!found)
                     {
                         string fp = dbPath.Replace("//", "\\").Replace("/", "\\").TrimEnd('\\');
@@ -8504,9 +8531,7 @@ namespace Enrollment.Controllers
                 if (foundFiles.Count == 0)
                 {
                     res.Success = false;
-                    var triedPaths = new System.Collections.Generic.List<string>();
-                    foreach (var e in dbFiles) { triedPaths.Add(e.Item1 + e.Item2); }
-                    res.Message = "Documents in DB=" + dbFiles.Count + " but not on disk. Tried: " + string.Join(" | ", triedPaths.ToArray()) + " Drives=" + dmsDirectories;
+                    res.Message = "Documents in DB=" + dbFiles.Count + " but not on disk. DNSName=" + string.Join(",", dbFiles.Select(x => x.Item3).Distinct().ToArray()) + " FilePath sample=" + (dbFiles.Count > 0 ? dbFiles[0].Item1 : "") + " Drives=" + dmsDirectories;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
