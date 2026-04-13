@@ -7627,24 +7627,20 @@ namespace Enrollment.Controllers
                     res.Message = "Session expired.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-
                 string filePath = System.Configuration.ConfigurationManager
                                         .AppSettings["TariffDocumentPath"];
-
                 if (string.IsNullOrWhiteSpace(filePath))
                 {
                     res.Success = false;
                     res.Message = "TariffDocumentPath is not configured in Web.config.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-
                 if (!System.IO.File.Exists(filePath))
                 {
                     res.Success = false;
                     res.Message = "Tariff file not found at: " + filePath;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
-
                 byte[] bytes = System.IO.File.ReadAllBytes(filePath);
                 res.Success  = true;
                 res.Message  = "Tariff document loaded.";
@@ -7661,9 +7657,8 @@ namespace Enrollment.Controllers
             }
         }
         /// <summary>
-        /// Fetches all PDF documents for a claim from DMSFileinfo_Claims,
-        /// generates S3 presigned URLs (same pattern as ClaimAttachment_Retrieve),
-        /// downloads and merges into single PDF returned as base64.
+        /// Fetches all claim documents from DMS API using token + claimdocumenturls,
+        /// downloads PDFs from pre-signed S3 URLs and merges into single base64 PDF.
         /// </summary>
         public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
@@ -7687,119 +7682,95 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Get connection string
-                string connStr = System.Configuration.ConfigurationManager
-                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
-                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
+                string dmsBaseUrl = System.Configuration.ConfigurationManager.AppSettings["DMSApiURL"].TrimEnd('/');
+                string clientId   = System.Configuration.ConfigurationManager.AppSettings["ClientID"];
+                string apiKey     = System.Configuration.ConfigurationManager.AppSettings["DMSAPIKey"];
+
+                // Force TLS 1.2
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.SecurityProtocolType.Tls12 |
+                    System.Net.SecurityProtocolType.Tls11 |
+                    System.Net.SecurityProtocolType.Tls;
+                System.Net.ServicePointManager.ServerCertificateValidationCallback =
+                    (sender, cert, chain, errors) => true;
+
+                // Step 1: Generate token — returns raw JWT string
+                string token = "";
                 {
-                    var m = System.Text.RegularExpressions.Regex.Match(
-                        connStr, "provider connection string=\"([^\"]+)\"",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    var client  = new System.Net.Http.HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                    var jsonDoc = Newtonsoft.Json.JsonConvert.SerializeObject(new { clientId, apiKey });
+                    var request = new System.Net.Http.HttpRequestMessage(
+                        System.Net.Http.HttpMethod.Post,
+                        dmsBaseUrl + "/api/Auth/generatetoken");
+                    request.Content = new System.Net.Http.StringContent(jsonDoc, null, "application/json");
+                    var response = client.SendAsync(request).GetAwaiter().GetResult();
+                    if (response.IsSuccessStatusCode)
+                        token = response.Content.ReadAsStringAsync().Result.Trim().Trim('"');
                 }
 
-                string directoryName = System.Configuration.ConfigurationManager
-                    .AppSettings["DMSDirectoryName"] ?? "E://,D://,C://";
-                string s3Bucket = System.Configuration.ConfigurationManager
-                    .AppSettings["S3SpectraBucketName"] ?? "prod-s3-spectra";
-
-                // Query DMSFileinfo_Claims - same as ClaimAttachment_Retrieve
-                var pdfEntries = new System.Collections.Generic.List<System.Tuple<string,string>>();
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandText =
-                        "SELECT SystemFileName, FilePath FROM DMSFileinfo_Claims " +
-                        "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
-                    cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        while (rdr.Read())
-                        {
-                            string fp  = rdr["FilePath"].ToString();
-                            string sys = rdr["SystemFileName"].ToString();
-                            pdfEntries.Add(System.Tuple.Create(fp, sys));
-                        }
-                    }
-                }
-
-                if (pdfEntries.Count == 0)
+                if (string.IsNullOrWhiteSpace(token))
                 {
                     res.Success = false;
-                    res.Message = "No documents found in DB for claimId=" + cId + " slNo=" + sNo;
+                    res.Message = "DMS token generation failed.";
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Build S3 key — strip drive prefix, use remainder as S3 key
-                // Use explicit credentials from Web.config (no IAM role on this server)
-                string accessKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocaccesskey"];
-                string secretKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocsecretkey"];
-                var s3Creds     = new Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey);
-                var s3Region    = Amazon.RegionEndpoint.APSouth1; // ap-south-1 (Mumbai) — typical for FHPL
-
-                var pdfBytesList = new System.Collections.Generic.List<byte[]>();
-
-                foreach (var entry in pdfEntries)
+                // Step 2: Get document URLs
+                string docsJson = "";
                 {
-                    string path = entry.Item1 + entry.Item2;
-                    string bucketName = path.Contains("/FAXServer/") ?
-                        System.Configuration.ConfigurationManager.AppSettings["S3FaxserverBucketName"] :
-                        s3Bucket;
+                    var client = new System.Net.Http.HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                    client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+                    client.DefaultRequestHeaders.Add("accept", "*/*");
+                    string url = string.Format("{0}/api/Document/claimdocumenturls?claimId={1}&claimExtNo={2}",
+                        dmsBaseUrl, cId, sNo);
+                    var response = client.GetAsync(url).GetAwaiter().GetResult();
+                    docsJson = response.Content.ReadAsStringAsync().Result;
+                }
 
-                    // Strip drive prefixes e.g. D://, E://, C://
-                    foreach (var drivePrefix in directoryName.Split(','))
-                        path = path.Replace(drivePrefix, "");
+                // Check valid JSON array
+                if (string.IsNullOrWhiteSpace(docsJson) || !docsJson.TrimStart().StartsWith("["))
+                {
+                    res.Success = false;
+                    res.Message = "No documents found in DMS for claimId=" + cId + ". Response: " + docsJson;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
 
-                    // Generate presigned URL using explicit credentials
-                    string presignedUrl = "";
-                    try
-                    {
-                        using (var s3Client = new Amazon.S3.AmazonS3Client(s3Creds, s3Region))
-                        {
-                            var request = new Amazon.S3.Model.GetPreSignedUrlRequest
-                            {
-                                BucketName = bucketName,
-                                Key        = path,
-                                Expires    = DateTime.Now.AddMinutes(15)
-                            };
-                            presignedUrl = s3Client.GetPreSignedURL(request);
-                        }
-                    }
-                    catch { continue; }
+                // Step 3: Parse document list — fields: documentUrl, documentName, documentCategory
+                var docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
+                if (docsList == null || docsList.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "Empty document list for claimId=" + cId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
 
-                    if (string.IsNullOrWhiteSpace(presignedUrl)) continue;
-
-                    // Download PDF from S3
+                // Step 4: Download each PDF from pre-signed URL
+                var pdfBytesList = new System.Collections.Generic.List<byte[]>();
+                foreach (var doc in docsList)
+                {
+                    string docUrl = (doc.documentUrl ?? doc.DocumentUrl ?? "").ToString();
+                    if (string.IsNullOrWhiteSpace(docUrl)) continue;
                     try
                     {
                         using (var wc = new System.Net.WebClient())
                         {
-                            byte[] pdfBytes = wc.DownloadData(presignedUrl);
+                            byte[] pdfBytes = wc.DownloadData(docUrl);
                             pdfBytesList.Add(pdfBytes);
                         }
                     }
-                    catch (Exception dlEx)
-                    {
-                        // Log the key and error for debugging
-                        pdfBytesList.Add(null); // placeholder to track failure
-                        res.Message = "S3 key tried: " + path + " | Error: " + dlEx.Message;
-                    }
+                    catch { /* skip failed downloads */ }
                 }
-
-                // Remove null placeholders from failed downloads
-                pdfBytesList.RemoveAll(x => x == null);
 
                 if (pdfBytesList.Count == 0)
                 {
-                    // res.Message already has the last S3 key + error from debug above
                     res.Success = false;
-                    if (string.IsNullOrWhiteSpace(res.Message))
-                        res.Message = "Files found in DB but could not download from S3 for claimId=" + cId;
+                    res.Message = "Could not download any documents from DMS for claimId=" + cId;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Merge all PDFs
+                // Step 5: Merge all PDFs into one
                 byte[] mergedBytes;
                 if (pdfBytesList.Count == 1)
                 {
@@ -7812,7 +7783,7 @@ namespace Enrollment.Controllers
                         using (var ms = new System.IO.MemoryStream())
                         {
                             var document = new iTextSharp.text.Document();
-                            var writer = new iTextSharp.text.pdf.PdfCopy(document, ms);
+                            var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
                             document.Open();
                             foreach (var pdfBytes in pdfBytesList)
                             {
@@ -7833,8 +7804,8 @@ namespace Enrollment.Controllers
 
                 string fileName = cId + "-" + sNo + "-medical-bill.pdf";
                 res.Success = true;
-                res.Message = "Medical bill loaded from S3. Files: " + pdfBytesList.Count;
-                res.Data = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
+                res.Message = "Medical bill loaded from DMS. Files: " + pdfBytesList.Count;
+                res.Data    = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -7842,7 +7813,7 @@ namespace Enrollment.Controllers
             {
                 Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
                 res.Success = false;
-                res.Message = "Error loading medical bill: " + ex.Message;
+                res.Message = "Error loading medical bill from DMS: " + ex.Message;
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
         }
