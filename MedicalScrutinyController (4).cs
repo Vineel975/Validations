@@ -8411,7 +8411,7 @@ namespace Enrollment.Controllers
                 }
 
                 string cId = (claimId ?? "").Trim();
-                string sNo = (slNo    ?? "1").Trim();
+                string sNo = (slNo ?? "1").Trim();
 
                 if (string.IsNullOrWhiteSpace(cId))
                 {
@@ -8420,49 +8420,36 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Query DMSFileinfo_Claims for all documents for this claim
                 string connStr = System.Configuration.ConfigurationManager
-                                       .ConnectionStrings["McarePlusEntities"]
-                                       .ConnectionString;
+                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
                 if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
                 {
                     var m = System.Text.RegularExpressions.Regex.Match(
-                        connStr, @"provider connection string=""([^""]+)""",
+                        connStr, "provider connection string=\"([^\"]+)\"",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 var files = new System.Collections.Generic.List<string>();
-                var names = new System.Collections.Generic.List<string>();
 
                 using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     var cmd = conn.CreateCommand();
-                    cmd.CommandText = @"
-                        SELECT Name, SystemFileName, FilePath
-                        FROM DMSFileinfo_Claims
-                        WHERE FilePath LIKE @pattern
-                          AND ISNULL(Deleted, 0) = 0
-                          AND FileType = '.pdf'
-                        ORDER BY ID";
-                    cmd.Parameters.AddWithValue("@pattern",
-                        "%" + cId + "-" + sNo + "/");
+                    cmd.CommandText = "SELECT Name, SystemFileName, FilePath FROM DMSFileinfo_Claims " +
+                                      "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
+                    cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
                     using (var rdr = cmd.ExecuteReader())
                     {
                         while (rdr.Read())
                         {
-                            string filePath   = rdr["FilePath"].ToString().TrimEnd('/').TrimEnd('\');
-                            string sysName    = rdr["SystemFileName"].ToString();
-                            string dispName   = rdr["Name"].ToString();
-                            // Normalize path separators
-                            filePath = filePath.Replace("//", "/").Replace('/', System.IO.Path.DirectorySeparatorChar);
-                            string fullPath = System.IO.Path.Combine(filePath, sysName);
+                            string fp = rdr["FilePath"].ToString().Trim();
+                            fp = System.Text.RegularExpressions.Regex.Replace(fp, @"/{2,}", "/");
+                            fp = fp.Replace("/", System.IO.Path.DirectorySeparatorChar.ToString()).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                            string sysName = rdr["SystemFileName"].ToString().Trim();
+                            string fullPath = System.IO.Path.Combine(fp, sysName);
                             if (System.IO.File.Exists(fullPath))
-                            {
                                 files.Add(fullPath);
-                                names.Add(dispName);
-                            }
                         }
                     }
                 }
@@ -8470,12 +8457,10 @@ namespace Enrollment.Controllers
                 if (files.Count == 0)
                 {
                     res.Success = false;
-                    res.Message = "No PDF documents found for claimId=" + cId + " slNo=" + sNo;
+                    res.Message = "No PDF files found on disk for claimId=" + cId + " slNo=" + sNo;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Merge all PDFs into one using simple byte concatenation with iTextSharp/PdfSharp
-                // Fallback: if only one file, return it directly
                 byte[] mergedBytes;
                 if (files.Count == 1)
                 {
@@ -8483,13 +8468,12 @@ namespace Enrollment.Controllers
                 }
                 else
                 {
-                    // Merge using iTextSharp if available, else concatenate raw bytes
                     try
                     {
                         using (var ms = new System.IO.MemoryStream())
                         {
                             var document = new iTextSharp.text.Document();
-                            var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
+                            var writer = new iTextSharp.text.pdf.PdfCopy(document, ms);
                             document.Open();
                             foreach (var f in files)
                             {
@@ -8504,15 +8488,14 @@ namespace Enrollment.Controllers
                     }
                     catch
                     {
-                        // Fallback: return first file if merge fails
                         mergedBytes = System.IO.File.ReadAllBytes(files[0]);
                     }
                 }
 
                 string fileName = cId + "-" + sNo + "-medical-bill.pdf";
                 res.Success = true;
-                res.Message = "Medical bill loaded. Files merged: " + files.Count;
-                res.Data    = new { fileName, base64Content = Convert.ToBase64String(mergedBytes) };
+                res.Message = "Medical bill loaded. Files: " + files.Count;
+                res.Data = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -8523,3 +8506,6 @@ namespace Enrollment.Controllers
                 res.Message = "Error loading medical bill: " + ex.Message;
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
+        }
+    }
+}
