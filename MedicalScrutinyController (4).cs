@@ -8395,8 +8395,9 @@ namespace Enrollment.Controllers
         }
 
         /// <summary>
-        /// Fetches all documents for a claim from DMSFileinfo_Claims,
-        /// merges them into a single PDF and returns as base64.
+        /// Fetches all PDF documents for a claim from DMSFileinfo_Claims DB table,
+        /// searches across configured drives (DMSDirectoryName), merges into one PDF.
+        /// Uses Web.config: DMSApiURL, ClientID, DMSAPIKey, DMSDirectoryName.
         /// </summary>
         public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
@@ -8420,6 +8421,7 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
+                // Get connection string
                 string connStr = System.Configuration.ConfigurationManager
                     .ConnectionStrings["McarePlusEntities"].ConnectionString;
                 if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
@@ -8427,48 +8429,94 @@ namespace Enrollment.Controllers
                     var m = System.Text.RegularExpressions.Regex.Match(
                         connStr, "provider connection string=\"([^\"]+)\"",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
                 }
 
-                var files = new System.Collections.Generic.List<string>();
+                // Get configured drives to search (DMSDirectoryName = "E://,D://,C://,F://,G://")
+                string dmsDirectories = System.Configuration.ConfigurationManager
+                    .AppSettings["DMSDirectoryName"] ?? "D://,C://,E://";
+                string[] drives = dmsDirectories.Split(new char[]{','}, StringSplitOptions.RemoveEmptyEntries);
 
+                // Query DB for all PDF files for this claim+slno
+                var dbFiles = new System.Collections.Generic.List<System.Tuple<string,string>>();
                 using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     var cmd = conn.CreateCommand();
-                    cmd.CommandText = "SELECT Name, SystemFileName, FilePath FROM DMSFileinfo_Claims " +
-                                      "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
+                    cmd.CommandText =
+                        "SELECT Name, SystemFileName, FilePath FROM DMSFileinfo_Claims " +
+                        "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
                     cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
                     using (var rdr = cmd.ExecuteReader())
                     {
                         while (rdr.Read())
                         {
-                            string fp = rdr["FilePath"].ToString().Trim();
-                            // Remap DB path root to IIS-accessible path if configured
-                            string dmsRootDb  = System.Configuration.ConfigurationManager.AppSettings["DMSRootPathDB"]  ?? "D://DMSDocuments";
-                            string dmsRootIIS = System.Configuration.ConfigurationManager.AppSettings["DMSRootPathIIS"] ?? "D:\\DMSDocuments";
-                            fp = fp.Replace(dmsRootDb, dmsRootIIS);
-                            fp = System.Text.RegularExpressions.Regex.Replace(fp, @"/{2,}", "/");
-                            fp = fp.Replace("/", System.IO.Path.DirectorySeparatorChar.ToString()).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                            string dbPath  = rdr["FilePath"].ToString().Trim();
                             string sysName = rdr["SystemFileName"].ToString().Trim();
-                            string fullPath = System.IO.Path.Combine(fp, sysName);
-                            if (System.IO.File.Exists(fullPath))
-                                files.Add(fullPath);
+                            dbFiles.Add(System.Tuple.Create(dbPath, sysName));
                         }
                     }
                 }
 
-                if (files.Count == 0)
+                if (dbFiles.Count == 0)
                 {
                     res.Success = false;
-                    res.Message = "No PDF files found on disk for claimId=" + cId + " slNo=" + sNo;
+                    res.Message = "No documents found in DB for claimId=" + cId + " slNo=" + sNo;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                byte[] mergedBytes;
-                if (files.Count == 1)
+                // Find actual files on disk — try each configured drive
+                var foundFiles = new System.Collections.Generic.List<string>();
+                foreach (var entry in dbFiles)
                 {
-                    mergedBytes = System.IO.File.ReadAllBytes(files[0]);
+                    string dbPath  = entry.Item1; // e.g. D://DMSDocuments/2026/2026-4/2026-4-2/26040206200-1/
+                    string sysName = entry.Item2;
+                    bool found = false;
+
+                    // Try each drive substitution
+                    foreach (string drive in drives)
+                    {
+                        string normalDrive = drive.Trim().TrimEnd('/').TrimEnd('\');
+                        // Extract relative path after the drive root (e.g. D:// → DMSDocuments/...)
+                        string relativePath = dbPath;
+                        // Remove any leading drive pattern like X:// or X:/
+                        relativePath = System.Text.RegularExpressions.Regex.Replace(
+                            relativePath, @"^[A-Za-z]:[/\]+", "");
+                        // Normalize slashes
+                        relativePath = relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar)
+                                                   .TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                        string fullDir  = normalDrive.Replace("//",":").Replace("/","\") + "\" + relativePath;
+                        string fullPath = System.IO.Path.Combine(fullDir, sysName);
+                        if (System.IO.File.Exists(fullPath))
+                        {
+                            foundFiles.Add(fullPath);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        // Last attempt: use path exactly as stored in DB, normalized
+                        string fp = dbPath.Replace("//", "\").Replace("/", "\").TrimEnd('\');
+                        string fullPath = fp + "\" + sysName;
+                        if (System.IO.File.Exists(fullPath))
+                            foundFiles.Add(fullPath);
+                    }
+                }
+
+                if (foundFiles.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "Documents found in DB (" + dbFiles.Count + ") but files not accessible on disk. " +
+                                  "Check DMSDirectoryName config and file server access.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Merge all PDFs
+                byte[] mergedBytes;
+                if (foundFiles.Count == 1)
+                {
+                    mergedBytes = System.IO.File.ReadAllBytes(foundFiles[0]);
                 }
                 else
                 {
@@ -8479,7 +8527,7 @@ namespace Enrollment.Controllers
                             var document = new iTextSharp.text.Document();
                             var writer = new iTextSharp.text.pdf.PdfCopy(document, ms);
                             document.Open();
-                            foreach (var f in files)
+                            foreach (var f in foundFiles)
                             {
                                 var reader = new iTextSharp.text.pdf.PdfReader(f);
                                 for (int p = 1; p <= reader.NumberOfPages; p++)
@@ -8492,13 +8540,13 @@ namespace Enrollment.Controllers
                     }
                     catch
                     {
-                        mergedBytes = System.IO.File.ReadAllBytes(files[0]);
+                        mergedBytes = System.IO.File.ReadAllBytes(foundFiles[0]);
                     }
                 }
 
                 string fileName = cId + "-" + sNo + "-medical-bill.pdf";
                 res.Success = true;
-                res.Message = "Medical bill loaded. Files: " + files.Count;
+                res.Message = "Medical bill loaded. Files merged: " + foundFiles.Count;
                 res.Data = new { fileName = fileName, base64Content = Convert.ToBase64String(mergedBytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
