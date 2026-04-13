@@ -29,3 +29,51 @@ WHERE EntityID = (
     JOIN Claims c ON c.ProviderID = p.ID
     WHERE c.ID = 26040206200
 )
+
+
+public ActionResult ProviderTariff(string tariffKey)
+{
+    try
+    {
+        if (Session[SessionValue.UserRegionID] != null)
+        {
+            string decryptQuryStr = new MasterUtilsBL().Decrypt(tariffKey.Replace(" ", "+"), Convert.ToString(ConfigurationManager.AppSettings["URLEncryptionKey"]));
+            string[] splitKeys = decryptQuryStr.Split('|');
+            long providerId = long.Parse(splitKeys[0]);
+            string MOUID = splitKeys[1].ToString();
+            DataTable dtTariffDoc = new ProviderViewModel().GetTariffDocsInfo(providerId, MOUID.ToString(), 0);
+            DataTable dtTariffDocWithOutMouId = new ProviderViewModel().GetTariffDocsInfo(providerId, MOUID.ToString(), 0, "NotMapped");
+            DataTable dtProvider = new CommonViewModel().GetProviderDetails(providerId);
+
+            ViewData["LoginType"] = Session[SessionValue.LoginType]?.ToString();
+
+            if (dtProvider.Rows.Count > 0)
+            {
+                ViewData["ProviderDetails"] = JsonConvert.SerializeObject(dtProvider);
+            }
+
+
+            //LoginType 1 means Internal Users
+            if (dtTariffDocWithOutMouId.Rows.Count > 0)// && ((Session[SessionValue.LoginType] != null && Session[SessionValue.LoginType].ToString() == "1") || dtTariffDoc.Rows.Count == 0))
+            {
+                ViewData["ProviderTariffDocDataWithOutMouId"] = JsonConvert.SerializeObject(dtTariffDocWithOutMouId);
+            }
+            if (dtTariffDoc.Rows.Count > 0)
+            {
+                ViewData["ProviderTariffDocData"] = JsonConvert.SerializeObject(dtTariffDoc);
+            }
+        }
+        else
+        {
+            return RedirectToAction("MCareLogin", "Account");
+        }
+    }
+    catch (Exception ex)
+    {
+        Elmah.ErrorLog errorLog = Elmah.ErrorLog.GetDefault(null);
+        errorLog.ApplicationName = System.Web.Configuration.WebConfigurationManager.AppSettings["AppName"].ToString();
+        errorLog.Log(new Elmah.Error(ex));
+        return RedirectToAction("Error");
+    }
+    return View();
+}
