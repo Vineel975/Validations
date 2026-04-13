@@ -8504,8 +8504,9 @@ namespace Enrollment.Controllers
                 if (foundFiles.Count == 0)
                 {
                     res.Success = false;
-                    res.Message = "Documents found in DB (" + dbFiles.Count + ") but files not accessible on disk. " +
-                                  "Check DMSDirectoryName config and file server access.";
+                    var triedPaths = new System.Collections.Generic.List<string>();
+                    foreach (var e in dbFiles) { triedPaths.Add(e.Item1 + e.Item2); }
+                    res.Message = "Documents in DB=" + dbFiles.Count + " but not on disk. Tried: " + string.Join(" | ", triedPaths.ToArray()) + " Drives=" + dmsDirectories;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
