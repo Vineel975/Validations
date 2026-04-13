@@ -1,14 +1,17 @@
-   Connection-specific DNS Suffix  . : fhpl.in
-   Link-local IPv6 Address . . . . . : fe80::bd8d:71a5:16a1:8b22%10
-   IPv4 Address. . . . . . . . . . . : 172.20.37.182
-   Subnet Mask . . . . . . . . . . . : 255.255.254.0
-   Default Gateway . . . . . . . . . : 172.20.36.1
-PM> dir D:\DMSDocuments
-dir : Cannot find path 'D:\DMSDocuments' because it does not exist.
-At line:1 char:1
-+ dir D:\DMSDocuments
-+ ~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : ObjectNotFound: (D:\DMSDocuments:String) [Get-ChildItem], ItemNotFoundException
-    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetChildItemCommand
- 
-PM> 
+SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_NAME LIKE '%S3%'
+ORDER BY TABLE_NAME
+
+
+-- Check if DMSFileinfo_Claims has any S3 or URL based paths
+SELECT TOP 5 FilePath, DNSName, SystemFileName
+FROM DMSFileinfo_Claims
+WHERE FilePath LIKE '%s3%' 
+   OR FilePath LIKE '%http%'
+   OR FilePath LIKE '%amazonaws%'
+   OR DNSName LIKE '%s3%'
+   OR DNSName LIKE '%amazonaws%'
+
+-- Also check other DMS tables
+SELECT TOP 5 * FROM GO_DIGIT_DMS_FILEINFO
+SELECT TOP 5 * FROM Reliance_DMS_FILEINFO
