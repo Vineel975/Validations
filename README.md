@@ -1,6 +1,65 @@
-SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
-WHERE TABLE_NAME LIKE '%DMS%' 
-   OR TABLE_NAME LIKE '%Document%'
-   OR TABLE_NAME LIKE '%Attach%'
-   OR TABLE_NAME LIKE '%File%'
-ORDER BY TABLE_NAME
+BulkInvestigationFiles
+BulkSettlementFiles
+BulkUpdateFiles
+CallDocument
+CignaTTKPaymentFileDump
+ClaimDocument_Details
+CWISS_Claims_NIAC_LOGS_FILE_INFO
+DeclarationFileInfo
+DHFLIntimationInputFileDump
+DMS_Fileinfo_Investigator
+DMSFileinfo_Claims
+DMSFileinfo_Claims_Tagic
+DMSFileInfo_Claims_Temp
+DMSFileinfo_Enrollment
+DMSFileinfo_Preauth
+DMSFileinfo_Provider
+DMSLog
+Dowloaded_DMS_FILEINFO
+FHPL_URife_FileLog
+GO_DIGIT_DMS_FILEINFO
+InsurerExcelfiledata
+KOTAK_LOGS_FILE_INFO
+KotakBillDetailsInputFileDump
+KotakCashlessInputFileDump
+KotakClaimsInputFile
+KotakClaimsInputFileDump
+KotakClaimsInputFilePendingClaims
+KotakClaimsOutputFileDump
+KotakClaimsPendingFileDump
+Lnk_RoleDocumentType
+MAGMA_WebAPI_FileInfo
+MagmaClaimsInputFileDump
+Mst_DocumentType
+Mst_IRDocuments
+NeftBounceExcelfiledata
+NIC_FileSaving_Configuration
+NIC_IMode_FileDetails
+NIC_IMode_FileDetails_Mcare
+NIC_IMode_FileInfo
+NIC_IMode_FileInfo_Mcare
+NIC_IMode_Log_FileDetails
+NIC_IMode_Log_FileInfo
+NIC_Smode_FileDetails
+NIC_Smode_FileInfo
+NIC_SMode_FileSegregationConfig
+OIC_Insurer_FileUploadDetails
+OIC_Insurer_FileUploadInfo
+OIC_MEDISEP_UPLOADFILE_DETAILS
+OIC_MEDISEP_UPLOADFILE_INFO
+PortingFiles
+PortingFilesHistory
+PortingFileStatus
+ProviderBulkUploadFiles
+ProviderReqPackageNegationFileDetails
+rel_PrintBatchDocument
+Reliance_DMS_FILEINFO
+Report_ABSLI_Payment_File
+Tagic_WebAPI_FileInfo
+Tata_GCUpload_FileDetails
+Tata_GCUpload_Fileinfo
+tbl_BulkDMSUtilityClaimsInfo
+Tbl_M_Files
+Tbl_T_Documents
+UIIC_GCCore_Claims_Log_file_info
+Vitraya_API_FileInfo
