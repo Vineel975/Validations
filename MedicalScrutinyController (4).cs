@@ -8395,9 +8395,8 @@ namespace Enrollment.Controllers
         }
 
         /// <summary>
-        /// Fetches medical bill PDF from DMS API using claimId + slNo.
-        /// Token is returned as raw JWT string.
-        /// Documents response may be plain text "No documents found" if wrong claimId format.
+        /// Fetches all documents for a claim from DMSFileinfo_Claims,
+        /// merges them into a single PDF and returns as base64.
         /// </summary>
         public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
@@ -8411,8 +8410,8 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                string cId = claimId ?? "";
-                string sNo = slNo   ?? "1";
+                string cId = (claimId ?? "").Trim();
+                string sNo = (slNo    ?? "1").Trim();
 
                 if (string.IsNullOrWhiteSpace(cId))
                 {
@@ -8421,134 +8420,99 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                string dmsBaseUrl = "https://nxtgen-dms-api-qa.fhpl.net";
-                string clientId   = "Test";
-                string apiKey     = "WWGurkkutK8F5Lpf9WGnnOUAFePbSObpi4m2Pq8w6xk=";
-
-                // Force TLS 1.2
-                System.Net.ServicePointManager.SecurityProtocol =
-                    System.Net.SecurityProtocolType.Tls12 |
-                    System.Net.SecurityProtocolType.Tls11 |
-                    System.Net.SecurityProtocolType.Tls;
-                System.Net.ServicePointManager.ServerCertificateValidationCallback =
-                    (sender, cert, chain, errors) => true;
-
-                // Step 1: Generate token — exact same pattern as GetDMSToken() in ViewModel
-                string token = "";
+                // Query DMSFileinfo_Claims for all documents for this claim
+                string connStr = System.Configuration.ConfigurationManager
+                                       .ConnectionStrings["McarePlusEntities"]
+                                       .ConnectionString;
+                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
                 {
-                    var client = new System.Net.Http.HttpClient();
-                    string tokenApiUrl = dmsBaseUrl + "/api/Auth/generatetoken";
-                    var jsonDoc = Newtonsoft.Json.JsonConvert.SerializeObject(new { clientId, apiKey });
-                    var request = new System.Net.Http.HttpRequestMessage(
-                        System.Net.Http.HttpMethod.Post, tokenApiUrl);
-                    var content = new System.Net.Http.StringContent(jsonDoc, null, "application/json");
-                    request.Content = content;
-                    var response = client.SendAsync(request).GetAwaiter().GetResult();
-                    if (response.IsSuccessStatusCode)
-                        token = response.Content.ReadAsStringAsync().Result.Trim().Trim('"');
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        connStr, @"provider connection string=""([^""]+)""",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
                 }
 
-                if (string.IsNullOrWhiteSpace(token))
-                {
-                    res.Success = false;
-                    res.Message = "DMS token is empty.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
+                var files = new System.Collections.Generic.List<string>();
+                var names = new System.Collections.Generic.List<string>();
 
-                // Step 2: Get document URLs — exact same pattern as MedicalScrutinyViewModel.GetDmsDocsurl
-                string docsJson = "";
-                using (var client = new System.Net.Http.HttpClient())
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
-                    string param   = "?claimId=" + cId + "&claimExtNo=" + sNo;
-                    Uri completeUri = new Uri(dmsBaseUrl + "/API/Document/claimdocumenturls" + param);
-                    client.DefaultRequestHeaders.Accept.Clear();
-                    client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-                    System.Net.Http.HttpResponseMessage apiResponse =
-                        client.GetAsync(completeUri).GetAwaiter().GetResult();
-                    if (!apiResponse.IsSuccessStatusCode)
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT Name, SystemFileName, FilePath
+                        FROM DMSFileinfo_Claims
+                        WHERE FilePath LIKE @pattern
+                          AND ISNULL(Deleted, 0) = 0
+                          AND FileType = '.pdf'
+                        ORDER BY ID";
+                    cmd.Parameters.AddWithValue("@pattern",
+                        "%" + cId + "-" + sNo + "/");
+                    using (var rdr = cmd.ExecuteReader())
                     {
-                        res.Success = false;
-                        res.Message = "DMS docs failed: " + apiResponse.StatusCode;
-                        return Json(res, JsonRequestBehavior.AllowGet);
-                    }
-                    docsJson = apiResponse.Content.ReadAsStringAsync().Result;
-                }
-
-                // Check if response is valid JSON array
-                string docsJsonTrimmed = (docsJson ?? "").Trim();
-                if (!docsJsonTrimmed.StartsWith("[") && !docsJsonTrimmed.StartsWith("{"))
-                {
-                    res.Success = false;
-                    res.Message = "DMS returned no documents for claimId=" + cId + ". Response: " + docsJson;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                // Step 3: Parse document list
-                List<dynamic> docsList = null;
-                try
-                {
-                    if (docsJsonTrimmed.StartsWith("["))
-                        docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
-                    else
-                    {
-                        dynamic wrapper = Newtonsoft.Json.JsonConvert.DeserializeObject(docsJson);
-                        var inner = wrapper?.data ?? wrapper?.Data ?? wrapper?.documents
-                                 ?? wrapper?.Documents ?? wrapper?.result ?? wrapper?.Result;
-                        if (inner != null)
-                            docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(inner.ToString());
+                        while (rdr.Read())
+                        {
+                            string filePath   = rdr["FilePath"].ToString().TrimEnd('/').TrimEnd('\');
+                            string sysName    = rdr["SystemFileName"].ToString();
+                            string dispName   = rdr["Name"].ToString();
+                            // Normalize path separators
+                            filePath = filePath.Replace("//", "/").Replace('/', System.IO.Path.DirectorySeparatorChar);
+                            string fullPath = System.IO.Path.Combine(filePath, sysName);
+                            if (System.IO.File.Exists(fullPath))
+                            {
+                                files.Add(fullPath);
+                                names.Add(dispName);
+                            }
+                        }
                     }
                 }
-                catch { }
 
-                if (docsList == null || docsList.Count == 0)
+                if (files.Count == 0)
                 {
                     res.Success = false;
-                    res.Message = "No documents parsed. Raw: " + docsJson;
+                    res.Message = "No PDF documents found for claimId=" + cId + " slNo=" + sNo;
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Step 4: Find medical bill — prefer by keyword, fallback to first
-                dynamic medDoc = null;
-                string[] medKeywords = { "hospital bill", "medical bill", "bill", "invoice", "hospitalbill" };
-                foreach (var doc in docsList)
+                // Merge all PDFs into one using simple byte concatenation with iTextSharp/PdfSharp
+                // Fallback: if only one file, return it directly
+                byte[] mergedBytes;
+                if (files.Count == 1)
                 {
-                    string docType = (doc.documentType ?? doc.DocumentType ?? doc.docType ?? "").ToString().ToLower();
-                    string docName = (doc.documentName ?? doc.DocumentName ?? doc.fileName ?? doc.FileName ?? "").ToString().ToLower();
-                    foreach (var kw in medKeywords)
-                        if (docType.Contains(kw) || docName.Contains(kw)) { medDoc = doc; break; }
-                    if (medDoc != null) break;
+                    mergedBytes = System.IO.File.ReadAllBytes(files[0]);
                 }
-                if (medDoc == null) medDoc = docsList[0];
-
-                // Fields confirmed from DocumentUrlresponse class: documentUrl, documentName
-                string docUrl      = (medDoc.documentUrl ?? medDoc.DocumentUrl ?? medDoc.url ?? medDoc.Url ?? "").ToString();
-                string docFileName = (medDoc.documentName ?? medDoc.DocumentName ?? medDoc.fileName ?? medDoc.FileName ?? "medical-bill.pdf").ToString();
-                if (!docFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-                    docFileName += ".pdf";
-
-                if (string.IsNullOrWhiteSpace(docUrl))
+                else
                 {
-                    res.Success = false;
-                    res.Message = "Document URL empty. Response: " + docsJson;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                // Step 5: Download PDF
-                byte[] pdfBytes;
-                using (var wcPdf = new System.Net.WebClient())
-                {
-                    // Try without auth first (pre-signed URL), fallback with token
-                    try { pdfBytes = wcPdf.DownloadData(docUrl); }
+                    // Merge using iTextSharp if available, else concatenate raw bytes
+                    try
+                    {
+                        using (var ms = new System.IO.MemoryStream())
+                        {
+                            var document = new iTextSharp.text.Document();
+                            var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
+                            document.Open();
+                            foreach (var f in files)
+                            {
+                                var reader = new iTextSharp.text.pdf.PdfReader(f);
+                                for (int p = 1; p <= reader.NumberOfPages; p++)
+                                    writer.AddPage(writer.GetImportedPage(reader, p));
+                                reader.Close();
+                            }
+                            document.Close();
+                            mergedBytes = ms.ToArray();
+                        }
+                    }
                     catch
                     {
-                        wcPdf.Headers[System.Net.HttpRequestHeader.Authorization] = "Bearer " + token;
-                        pdfBytes = wcPdf.DownloadData(docUrl);
+                        // Fallback: return first file if merge fails
+                        mergedBytes = System.IO.File.ReadAllBytes(files[0]);
                     }
                 }
 
+                string fileName = cId + "-" + sNo + "-medical-bill.pdf";
                 res.Success = true;
-                res.Message = "Medical bill loaded from DMS.";
-                res.Data    = new { fileName = docFileName, base64Content = Convert.ToBase64String(pdfBytes) };
+                res.Message = "Medical bill loaded. Files merged: " + files.Count;
+                res.Data    = new { fileName, base64Content = Convert.ToBase64String(mergedBytes) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -8556,98 +8520,6 @@ namespace Enrollment.Controllers
             {
                 Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
                 res.Success = false;
-                res.Message = "Error loading medical bill from DMS: " + ex.Message;
+                res.Message = "Error loading medical bill: " + ex.Message;
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
-        }
-
-        /// <summary>
-        /// Server-side proxy: POSTs to Convex /api/claims/process.
-        /// Bridges Spectra http:// → Convex https:// without Mixed Content in the browser.
-        /// POST /MedicalScrutiny/StartClaimAuditProxy
-        /// </summary>
-        [HttpPost]
-        public async Task<ActionResult> StartClaimAuditProxy()
-        {
-            var res = new ApiResponse<object>();
-            try
-            {
-                if (Session[SessionValue.UserRegionID] == null)
-                {
-                    res.Success = false; res.ErrorCode = "ErrorCode#1";
-                    res.Message = "Session expired.";
-                    return Json(res);
-                }
-
-                Request.InputStream.Position = 0;
-                string body;
-                using (var reader = new System.IO.StreamReader(
-                    Request.InputStream, System.Text.Encoding.UTF8, false, 65536, true))
-                    body = await reader.ReadToEndAsync();
-
-                const string convexUrl = "https://calm-opossum-78.convex.site/api/claims/process";
-                ServicePointManager.SecurityProtocol =
-                    SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-                ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
-
-                var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(convexUrl);
-                req.Method = "POST"; req.ContentType = "application/json";
-                req.Timeout = 120000; req.ReadWriteTimeout = 120000;
-                req.AllowWriteStreamBuffering = false;
-
-                byte[] bodyBytes = System.Text.Encoding.UTF8.GetBytes(body);
-                req.ContentLength = bodyBytes.Length;
-                using (var s = await req.GetRequestStreamAsync())
-                {
-                    int offset = 0;
-                    while (offset < bodyBytes.Length)
-                    {
-                        int chunk = Math.Min(65536, bodyBytes.Length - offset);
-                        await s.WriteAsync(bodyBytes, offset, chunk);
-                        offset += chunk;
-                    }
-                }
-
-                string responseBody;
-                using (var wr = (System.Net.HttpWebResponse)await req.GetResponseAsync())
-                using (var rs = wr.GetResponseStream())
-                using (var rr = new System.IO.StreamReader(rs))
-                    responseBody = await rr.ReadToEndAsync();
-
-                dynamic result = Newtonsoft.Json.JsonConvert.DeserializeObject(responseBody);
-                string jobId   = (string)result.jobId;
-                if (string.IsNullOrWhiteSpace(jobId))
-                {
-                    res.Success = false;
-                    res.Message = "Convex did not return a jobId: "
-                                + responseBody.Substring(0, Math.Min(300, responseBody.Length));
-                    return Json(res);
-                }
-                res.Success = true;
-                res.Data    = new { jobId = jobId };
-                return Json(res);
-            }
-            catch (System.Net.WebException wex)
-            {
-                string errBody = string.Empty;
-                if (wex.Response != null)
-                    using (var s = wex.Response.GetResponseStream())
-                    using (var r = new System.IO.StreamReader(s))
-                        errBody = r.ReadToEnd();
-                res.Success = false;
-                res.Message = "Convex error: " + wex.Message
-                            + (string.IsNullOrEmpty(errBody) ? ""
-                               : " | " + errBody.Substring(0, Math.Min(300, errBody.Length)));
-                return Json(res);
-            }
-            catch (Exception ex)
-            {
-                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
-                res.Success = false;
-                res.Message = "Error submitting to Convex: " + ex.Message;
-                return Json(res);
-            }
-        }
-
-    }
-}
