@@ -8500,6 +8500,7 @@ namespace Enrollment.Controllers
                             foundFiles.Add(fullPath2);
                     }
 
+                }
                 if (foundFiles.Count == 0)
                 {
                     res.Success = false;
