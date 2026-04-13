@@ -1,17 +1,14 @@
--- Check what server Spectra IIS runs on vs DNSName in DB
-SELECT DISTINCT DNSName, COUNT(*) as FileCount 
-FROM DMSFileinfo_Claims 
-WHERE Deleted = 0
-GROUP BY DNSName
-ORDER BY FileCount DESC
-
-
-GET https://nxtgen-dms-api-qa.fhpl.net/api/Document/claimdocumenturls?claimId=26031420980&claimExtNo=1
-
-
-DNSName              FileCount
--------------------- -----------
-200.200.201.85       1328
-                     222
-NULL                 12
-
+   Connection-specific DNS Suffix  . : fhpl.in
+   Link-local IPv6 Address . . . . . : fe80::bd8d:71a5:16a1:8b22%10
+   IPv4 Address. . . . . . . . . . . : 172.20.37.182
+   Subnet Mask . . . . . . . . . . . : 255.255.254.0
+   Default Gateway . . . . . . . . . : 172.20.36.1
+PM> dir D:\DMSDocuments
+dir : Cannot find path 'D:\DMSDocuments' because it does not exist.
+At line:1 char:1
++ dir D:\DMSDocuments
++ ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\DMSDocuments:String) [Get-ChildItem], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetChildItemCommand
+ 
+PM> 
