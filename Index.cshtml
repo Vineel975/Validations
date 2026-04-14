@@ -8629,16 +8629,15 @@
                     // Probable Line of Treatment → ddlHospTreatmentType
                     if (hospTreatmentKeyword) {
                         var $hospDdl = $('#ddlHospTreatmentType');
-                        if (!$hospDdl.val() || $hospDdl.val() === '0' || $hospDdl.val() === '') {
-                            var matchedVal = null;
-                            $hospDdl.find('option').each(function () {
-                                if ($(this).text().toLowerCase().indexOf(hospTreatmentKeyword) !== -1) {
-                                    matchedVal = $(this).val();
-                                    return false;
-                                }
-                            });
-                            if (matchedVal) $hospDdl.val(matchedVal).trigger('change');
-                        }
+                        var matchedVal = null;
+                        $hospDdl.find('option').each(function () {
+                            if ($(this).text().toLowerCase().indexOf(hospTreatmentKeyword) !== -1) {
+                                matchedVal = $(this).val();
+                                return false;
+                            }
+                        });
+                        console.log('[ClaimAI] hospTreatmentKeyword:', hospTreatmentKeyword, 'matchedVal:', matchedVal);
+                        if (matchedVal) $hospDdl.val(matchedVal).trigger('change');
                     }
 
                     // Coding save is handled by setIcdSlots postMessage (sent after ICD fetch)
