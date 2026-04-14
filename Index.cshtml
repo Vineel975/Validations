@@ -7889,11 +7889,16 @@
             xhrFac.send(null);
             if (xhrFac.status === 200) {
                 var facFields = JSON.parse(xhrFac.responseText);
+                console.log('[ClaimAI] FacilityRestore - approvedFacilityId from DB:', facFields.approvedFacilityId);
                 if (facFields.approvedFacilityId && facFields.approvedFacilityId !== '0') {
                     var $aprvDdl = $('#ddlApprovedFacility');
-                    if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
+                    var optCount = $aprvDdl.find('option').length;
+                    var optExists = $aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0;
+                    var currentVal = $aprvDdl.val();
+                    console.log('[ClaimAI] FacilityRestore - optCount:', optCount, 'optExists:', optExists, 'currentVal:', currentVal, 'disabled:', $aprvDdl.is(':disabled'));
+                    if (optExists) {
                         $aprvDdl.val(facFields.approvedFacilityId);
-                        console.log('[ClaimAI] ApprovedFacility restored from DB:', facFields.approvedFacilityId);
+                        console.log('[ClaimAI] FacilityRestore - set to:', $aprvDdl.val());
                     }
                     window._claimAI_approvedFacilityId = facFields.approvedFacilityId;
                 }
