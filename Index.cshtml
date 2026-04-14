@@ -7878,8 +7878,9 @@
 
     BindDropdown(MasterData.mFacility, "ddlApprovedFacility");
 
-    // Restore ApprovedFacilityID from DB — must run AFTER BindDropdown populates options
-    (function() {
+    // Restore ApprovedFacilityID from DB — use setTimeout to run AFTER all BindDropdown
+    // and ddlReceivedAccomodation.change() events have fired
+    setTimeout(function() {
         try {
             var claimIdForFac = $('#hdnClaimID').val();
             if (!claimIdForFac) return;
@@ -7888,10 +7889,10 @@
             xhrFac.send(null);
             if (xhrFac.status === 200) {
                 var facFields = JSON.parse(xhrFac.responseText);
-                if (facFields.approvedFacilityId) {
+                if (facFields.approvedFacilityId && facFields.approvedFacilityId !== '0') {
                     var $aprvDdl = $('#ddlApprovedFacility');
                     if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
-                        $aprvDdl.val(facFields.approvedFacilityId).trigger('change');
+                        $aprvDdl.val(facFields.approvedFacilityId);
                         console.log('[ClaimAI] ApprovedFacility restored from DB:', facFields.approvedFacilityId);
                     }
                     window._claimAI_approvedFacilityId = facFields.approvedFacilityId;
@@ -7900,7 +7901,7 @@
         } catch(e) {
             console.warn('[ClaimAI] ApprovedFacility restore failed:', e);
         }
-    })();
+    }, 500);
 
     BindDropdown(MasterData.mAdmissionType, "ddlAdmissionType");
     BindDropdown(MasterData.mAnesthesiaType, "ddlTypeOfAnesthitia");
