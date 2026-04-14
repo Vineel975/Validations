@@ -7617,6 +7617,125 @@ namespace Enrollment.Controllers
         /// </summary>
         [HttpGet]
         /// <summary>
+        /// POST /MedicalScrutiny/StartClaimAuditProxy
+        /// Bridge between Spectra (http) and Convex (https).
+        /// Receives base64 PDFs from browser, forwards to ClaimAI Next.js
+        /// /api/audit/start as multipart/form-data, returns jobId.
+        /// </summary>
+        [HttpPost]
+        public ActionResult StartClaimAuditProxy()
+        {
+            var res = new ApiResponse<object>();
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                {
+                    res.Success = false; res.ErrorCode = "ErrorCode#1";
+                    res.Message = "Session expired.";
+                    return Json(res);
+                }
+
+                // Parse JSON body
+                Request.InputStream.Seek(0, System.IO.SeekOrigin.Begin);
+                string body = new System.IO.StreamReader(Request.InputStream).ReadToEnd();
+                dynamic payload = Newtonsoft.Json.JsonConvert.DeserializeObject(body);
+
+                string claimId            = payload?.claimId?.ToString() ?? "";
+                string hospitalBillBase64 = payload?.hospitalBillBase64?.ToString() ?? "";
+                string hospitalFileName   = payload?.hospitalFileName?.ToString() ?? "medical-bill.pdf";
+                string tariffBase64       = payload?.tariffBase64?.ToString() ?? "";
+                string tariffFileName     = payload?.tariffFileName?.ToString() ?? "";
+                string spectraFieldsJson  = payload?.spectraFields != null
+                    ? Newtonsoft.Json.JsonConvert.SerializeObject(payload.spectraFields)
+                    : "";
+
+                if (string.IsNullOrWhiteSpace(claimId) || string.IsNullOrWhiteSpace(hospitalBillBase64))
+                {
+                    res.Success = false;
+                    res.Message = "claimId and hospitalBillBase64 are required.";
+                    return Json(res);
+                }
+
+                // Convert base64 to bytes
+                byte[] medBytes = Convert.FromBase64String(hospitalBillBase64);
+                byte[] tarBytes = !string.IsNullOrWhiteSpace(tariffBase64)
+                    ? Convert.FromBase64String(tariffBase64)
+                    : null;
+
+                // Forward to ClaimAI /api/audit/start as multipart
+                string claimAiUrl = "http://localhost:3000/api/audit/start";
+
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.SecurityProtocolType.Tls12 |
+                    System.Net.SecurityProtocolType.Tls11 |
+                    System.Net.SecurityProtocolType.Tls;
+
+                string boundary = "----ClaimAIBoundary" + Guid.NewGuid().ToString("N");
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromMinutes(3);
+                    var form = new System.Net.Http.MultipartFormDataContent(boundary);
+
+                    // claimId
+                    form.Add(new System.Net.Http.StringContent(claimId), "claimId");
+
+                    // medicalBill PDF
+                    var medContent = new System.Net.Http.ByteArrayContent(medBytes);
+                    medContent.Headers.ContentType =
+                        new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+                    form.Add(medContent, "medicalBill", hospitalFileName);
+
+                    // tariffBill PDF (optional)
+                    if (tarBytes != null && !string.IsNullOrWhiteSpace(tariffFileName))
+                    {
+                        var tarContent = new System.Net.Http.ByteArrayContent(tarBytes);
+                        tarContent.Headers.ContentType =
+                            new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+                        form.Add(tarContent, "tariffBill", tariffFileName);
+                    }
+
+                    // spectraFields JSON (optional)
+                    if (!string.IsNullOrWhiteSpace(spectraFieldsJson))
+                    {
+                        form.Add(new System.Net.Http.StringContent(spectraFieldsJson), "spectraFields");
+                    }
+
+                    var response = client.PostAsync(claimAiUrl, form).GetAwaiter().GetResult();
+                    string responseBody = response.Content.ReadAsStringAsync().Result;
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        res.Success = false;
+                        res.Message = "ClaimAI error: " + response.StatusCode + " — " + responseBody;
+                        return Json(res);
+                    }
+
+                    dynamic convexRes = Newtonsoft.Json.JsonConvert.DeserializeObject(responseBody);
+                    string jobId = convexRes?.jobId?.ToString() ?? "";
+
+                    if (string.IsNullOrWhiteSpace(jobId))
+                    {
+                        res.Success = false;
+                        res.Message = "No jobId returned from ClaimAI. Response: " + responseBody;
+                        return Json(res);
+                    }
+
+                    res.Success = true;
+                    res.Message = "Job started.";
+                    res.Data    = new { jobId };
+                    return Json(res);
+                }
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                res.Success = false;
+                res.Message = "StartClaimAuditProxy error: " + ex.Message;
+                return Json(res);
+            }
+        }
+
+        /// <summary>
         /// Fetches tariff PDF for a claim.
         /// Prod/Preprod: S3 via Usp_TariffUploadDoc_FillDetails + ProviderID lookup.
         /// Lower environments (dev/qa/uat): local file {LocalClaimDocPath}{claimId}-tariff.pdf.
