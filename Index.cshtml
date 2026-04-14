@@ -8779,8 +8779,12 @@
                             $icon.addClass($icon.data('icon-show'));
                         });
                     }
-                    // Reload immediately — all DB saves already triggered via AJAX before this message
-                    window.location.reload();
+                    // Delay reload by 1500ms to allow all AJAX saves to complete
+                    // setClinicalDetails has a 500ms setTimeout before its AJAX fires
+                    // setBillingDetails and setIcdSlots also need time to complete
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1500);
                 }
 
                 // ICD slots arrive after async fetch — triggers coding save
