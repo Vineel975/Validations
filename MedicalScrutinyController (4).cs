@@ -7711,12 +7711,16 @@ namespace Enrollment.Controllers
                     }
 
                     dynamic convexRes = Newtonsoft.Json.JsonConvert.DeserializeObject(responseBody);
+                    // audit/start returns { success, jobId, claimId }
+                    // audit returns { jobId } directly
                     string jobId = convexRes?.jobId?.ToString() ?? "";
+                    bool convexSuccess = convexRes?.success == null || convexRes.success == true;
 
-                    if (string.IsNullOrWhiteSpace(jobId))
+                    if (!convexSuccess || string.IsNullOrWhiteSpace(jobId))
                     {
+                        string errMsg = convexRes?.error?.ToString() ?? convexRes?.message?.ToString() ?? responseBody;
                         res.Success = false;
-                        res.Message = "No jobId returned from ClaimAI. Response: " + responseBody;
+                        res.Message = "No jobId returned from ClaimAI. Error: " + errMsg;
                         return Json(res);
                     }
 
