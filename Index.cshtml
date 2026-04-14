@@ -7894,20 +7894,8 @@
                     var $aprvDdl = $('#ddlApprovedFacility');
                     if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
                         $aprvDdl.val(facFields.approvedFacilityId);
-                        console.log('[ClaimAI] FacilityRestore set:', facFields.approvedFacilityId, 'current:', $aprvDdl.val());
+                        console.log('[ClaimAI] FacilityRestore set:', facFields.approvedFacilityId);
                     }
-                    // Watch for overwrite and re-apply
-                    var _savedFacId = facFields.approvedFacilityId;
-                    var _watchCount = 0;
-                    var _watchTimer = setInterval(function() {
-                        _watchCount++;
-                        var curVal = $('#ddlApprovedFacility').val();
-                        if (curVal !== _savedFacId) {
-                            console.log('[ClaimAI] FacilityRestore OVERWRITTEN from', curVal, 'restoring to', _savedFacId);
-                            $('#ddlApprovedFacility').val(_savedFacId);
-                        }
-                        if (_watchCount >= 10) clearInterval(_watchTimer); // stop after 5 seconds
-                    }, 500);
                 }
             }
         } catch(e) {
@@ -8777,11 +8765,43 @@
                 // Save complete — collapse widget, store jobId, reload page
                 if (event.data.type === 'claimAISaveComplete') {
                     var savedJobId = event.data.jobId || '';
-                    if (savedJobId) {
-                        sessionStorage.setItem('claimAI_jobId', savedJobId);
-                        sessionStorage.setItem('claimAI_claimId', $('#hdnClaimID').val());
-                    }
-                    // Collapse AI summary widget
+
+                    // Wait for all AJAX saves to settle, then trigger Spectra save buttons
+                    setTimeout(function() {
+                        // Trigger Hospitalization Details save button
+                        var $hospBtn = $('#btnHospDetailsSave');
+                        if ($hospBtn.length && $hospBtn.is(':visible')) {
+                            $hospBtn.trigger('click');
+                            console.log('[ClaimAI] Triggered btnHospDetailsSave');
+                        }
+
+                        // Trigger Coding Details save button
+                        var $codingBtn = $('#btnCodingDetails');
+                        if ($codingBtn.length && $codingBtn.is(':visible')) {
+                            $codingBtn.trigger('click');
+                            console.log('[ClaimAI] Triggered btnCodingDetails');
+                        }
+
+                        // Trigger Billing Details save button
+                        var $billBtn = $('#btnServiceBillDetailsSave');
+                        if ($billBtn.length && $billBtn.is(':visible')) {
+                            $billBtn.trigger('click');
+                            console.log('[ClaimAI] Triggered btnServiceBillDetailsSave');
+                        }
+
+                        // Store jobId and reload after saves complete
+                        if (savedJobId) {
+                            sessionStorage.setItem('claimAI_jobId', savedJobId);
+                            sessionStorage.setItem('claimAI_claimId', $('#hdnClaimID').val());
+                        }
+
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 2000);
+
+                    }, 800);
+
+                    // Collapse AI summary widget immediately
                     var $widget = $('#divAiSummary');
                     if ($widget.length) {
                         $widget.addClass('collapsed');
@@ -8792,12 +8812,6 @@
                             $icon.addClass($icon.data('icon-show'));
                         });
                     }
-                    // Delay reload by 1500ms to allow all AJAX saves to complete
-                    // setClinicalDetails has a 500ms setTimeout before its AJAX fires
-                    // setBillingDetails and setIcdSlots also need time to complete
-                    setTimeout(function() {
-                        window.location.reload();
-                    }, 1500);
                 }
 
                 // ICD slots arrive after async fetch — triggers coding save
