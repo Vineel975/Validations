@@ -1,1 +1,1 @@
-[ClaimAI] StartClaimAuditProxy response: false ClaimAI error: NotFound — Server action not found. null
+[ClaimAI] SaveClinical - claimDetailsId: 13422053 approvedFacId: 195 diagnosis: Cataract RE, IMSC, BE - IMSC treatment: MICS+IOL RE
