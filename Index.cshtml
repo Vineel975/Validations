@@ -7094,7 +7094,10 @@
          window.IS_PAYTM_CLAIM = @((ViewData["AlertPaytmCorpClaims"] ?? "false").ToString().ToLower());
         $(document).ready(function () {
             GetInsurerRejectionMaster($('#hdnInsuranceCompanyID').val(), $('#hdnClaimProductID').val());
-            InitAiSummary($('#hdnClaimID').val(), $('#hdnClaimSlNo').val());
+            var _claimIdOnLoad = $('#hdnClaimID').val();
+            if (!RestoreAiSummaryIfSaved(_claimIdOnLoad)) {
+                InitAiSummary(_claimIdOnLoad, $('#hdnClaimSlNo').val());
+            }
             // Convert string value into a proper boolean
             if (window.IS_PAYTM_CLAIM) {
                 alert("Sorry! Delayed claim intimation cannot be processed. HR approval is mandatory for further processing.");
@@ -7127,6 +7130,38 @@
 
         var _claimAiUrl = 'http://localhost:3000';
         //  6. ClaimAI UI renders fully inside the iframe
+
+        function RestoreAiSummaryIfSaved(claimID) {
+            // After page reload following a Save, restore iframe from sessionStorage jobId
+            var savedJobId  = sessionStorage.getItem('claimAI_jobId');
+            var savedClaim  = sessionStorage.getItem('claimAI_claimId');
+            if (!savedJobId || savedClaim !== claimID.toString()) return false;
+
+            // Clear storage so next load starts fresh
+            sessionStorage.removeItem('claimAI_jobId');
+            sessionStorage.removeItem('claimAI_claimId');
+
+            // Keep widget collapsed — user clicks + to expand
+            var $widget = $('#divAiSummary');
+            $widget.addClass('collapsed');
+            $widget.find('.widget-body').hide();
+            $widget.find('[data-icon-show]').each(function() {
+                var $icon = $(this);
+                $icon.removeClass($icon.data('icon-hide'));
+                $icon.addClass($icon.data('icon-show'));
+            });
+
+            // Wire up the expand click to restore iframe (not reload AI)
+            var ifrSrc = _claimAiUrl + '/job/' + encodeURIComponent(savedJobId) + '?embedded=1';
+            var $collapseBtn = $widget.find('[data-action="collapse"]');
+            $collapseBtn.off('click.claimAIRestore').one('click.claimAIRestore', function() {
+                $('#divAiLoading').hide();
+                $('#divAiError').hide();
+                $('#ifrClaimAI').attr('src', ifrSrc).show();
+            });
+
+            return true; // Restored — skip InitAiSummary
+        }
 
         function InitAiSummary(claimID, slNo) {
             console.log('[ClaimAI] InitAiSummary started. claimID:', claimID, 'slNo:', slNo);
@@ -8686,6 +8721,30 @@
                             console.warn('[ClaimAI] SaveBilling error:', xhr.responseText);
                         }
                     });
+                }
+
+                // Save complete — collapse widget, store jobId, reload page
+                if (event.data.type === 'claimAISaveComplete') {
+                    var savedJobId = event.data.jobId || '';
+                    if (savedJobId) {
+                        sessionStorage.setItem('claimAI_jobId', savedJobId);
+                        sessionStorage.setItem('claimAI_claimId', $('#hdnClaimID').val());
+                    }
+                    // Collapse AI summary widget
+                    var $widget = $('#divAiSummary');
+                    if ($widget.length) {
+                        $widget.addClass('collapsed');
+                        $widget.find('.widget-body').hide();
+                        $widget.find('[data-icon-show]').each(function() {
+                            var $icon = $(this);
+                            $icon.removeClass($icon.data('icon-hide'));
+                            $icon.addClass($icon.data('icon-show'));
+                        });
+                    }
+                    // Reload page after delay — gives all AJAX saves (billing, coding, clinical) time to complete
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 2500);
                 }
 
                 // ICD slots arrive after async fetch — triggers coding save
