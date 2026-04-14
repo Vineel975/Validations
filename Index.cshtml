@@ -7096,28 +7096,6 @@
             GetInsurerRejectionMaster($('#hdnInsuranceCompanyID').val(), $('#hdnClaimProductID').val());
             var _claimIdOnLoad = $('#hdnClaimID').val();
 
-            // Restore ApprovedFacilityID from DB on every page load
-            if (_claimIdOnLoad) {
-                try {
-                    var xhrFac = new XMLHttpRequest();
-                    xhrFac.open('GET', '/MedicalScrutiny/GetClaimFieldsForValidation?claimId=' + encodeURIComponent(_claimIdOnLoad), false);
-                    xhrFac.send(null);
-                    if (xhrFac.status === 200) {
-                        var facFields = JSON.parse(xhrFac.responseText);
-                        if (facFields.approvedFacilityId) {
-                            var $aprvDdl = $('#ddlApprovedFacility');
-                            if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
-                                $aprvDdl.val(facFields.approvedFacilityId).trigger('change');
-                                console.log('[ClaimAI] ApprovedFacility restored from DB:', facFields.approvedFacilityId);
-                            }
-                            window._claimAI_approvedFacilityId = facFields.approvedFacilityId;
-                        }
-                    }
-                } catch(e) {
-                    console.warn('[ClaimAI] ApprovedFacility restore failed:', e);
-                }
-            }
-
             if (!RestoreAiSummaryIfSaved(_claimIdOnLoad)) {
                 InitAiSummary(_claimIdOnLoad, $('#hdnClaimSlNo').val());
             }
@@ -7899,6 +7877,31 @@
     });
 
     BindDropdown(MasterData.mFacility, "ddlApprovedFacility");
+
+    // Restore ApprovedFacilityID from DB — must run AFTER BindDropdown populates options
+    (function() {
+        try {
+            var claimIdForFac = $('#hdnClaimID').val();
+            if (!claimIdForFac) return;
+            var xhrFac = new XMLHttpRequest();
+            xhrFac.open('GET', '/MedicalScrutiny/GetClaimFieldsForValidation?claimId=' + encodeURIComponent(claimIdForFac), false);
+            xhrFac.send(null);
+            if (xhrFac.status === 200) {
+                var facFields = JSON.parse(xhrFac.responseText);
+                if (facFields.approvedFacilityId) {
+                    var $aprvDdl = $('#ddlApprovedFacility');
+                    if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
+                        $aprvDdl.val(facFields.approvedFacilityId).trigger('change');
+                        console.log('[ClaimAI] ApprovedFacility restored from DB:', facFields.approvedFacilityId);
+                    }
+                    window._claimAI_approvedFacilityId = facFields.approvedFacilityId;
+                }
+            }
+        } catch(e) {
+            console.warn('[ClaimAI] ApprovedFacility restore failed:', e);
+        }
+    })();
+
     BindDropdown(MasterData.mAdmissionType, "ddlAdmissionType");
     BindDropdown(MasterData.mAnesthesiaType, "ddlTypeOfAnesthitia");
     BindDropdown(MasterData.mClaimRequestType, "ddlRequestType");
