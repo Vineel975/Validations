@@ -8527,13 +8527,17 @@
 
                 if (event.data.type === 'setApprovedAccommodation') {
                     var facilityId = event.data.facilityId;
+                    console.log('[ClaimAI] setApprovedAccommodation received. facilityId:', facilityId);
                     if (facilityId) {
                         var $ddl = $('#ddlApprovedFacility');
-                        if ($ddl.find('option[value="' + facilityId + '"]').length > 0) {
+                        var optExists = $ddl.find('option[value="' + facilityId + '"]').length > 0;
+                        console.log('[ClaimAI] ddlApprovedFacility option exists:', optExists, 'ddl disabled:', $ddl.is(':disabled'));
+                        if (optExists) {
                             $ddl.val(facilityId).trigger('change');
                         }
                     }
                     window._claimAI_approvedFacilityId = facilityId || '';
+                    console.log('[ClaimAI] window._claimAI_approvedFacilityId set to:', window._claimAI_approvedFacilityId);
                 }
 
                 if (event.data.type === 'copyAvailedToApproved') {
@@ -8613,6 +8617,9 @@
                         // Approved facility — use stored value from setApprovedAccommodation
                         // fallback to current dropdown value
                         var approvedFacId = window._claimAI_approvedFacilityId || $('#ddlApprovedFacility').val() || '';
+                        console.log('[ClaimAI] SaveClinical - approvedFacId:', approvedFacId,
+                            'window._claimAI_approvedFacilityId:', window._claimAI_approvedFacilityId,
+                            'ddlApprovedFacility:', $('#ddlApprovedFacility').val());
 
                         $.ajax({
                             url: '@Url.Action("SaveClinicalDetailsForClaimAI", "MedicalScrutiny")',
