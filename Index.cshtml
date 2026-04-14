@@ -7095,6 +7095,29 @@
         $(document).ready(function () {
             GetInsurerRejectionMaster($('#hdnInsuranceCompanyID').val(), $('#hdnClaimProductID').val());
             var _claimIdOnLoad = $('#hdnClaimID').val();
+
+            // Restore ApprovedFacilityID from DB on every page load
+            if (_claimIdOnLoad) {
+                try {
+                    var xhrFac = new XMLHttpRequest();
+                    xhrFac.open('GET', '/MedicalScrutiny/GetClaimFieldsForValidation?claimId=' + encodeURIComponent(_claimIdOnLoad), false);
+                    xhrFac.send(null);
+                    if (xhrFac.status === 200) {
+                        var facFields = JSON.parse(xhrFac.responseText);
+                        if (facFields.approvedFacilityId) {
+                            var $aprvDdl = $('#ddlApprovedFacility');
+                            if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
+                                $aprvDdl.val(facFields.approvedFacilityId).trigger('change');
+                                console.log('[ClaimAI] ApprovedFacility restored from DB:', facFields.approvedFacilityId);
+                            }
+                            window._claimAI_approvedFacilityId = facFields.approvedFacilityId;
+                        }
+                    }
+                } catch(e) {
+                    console.warn('[ClaimAI] ApprovedFacility restore failed:', e);
+                }
+            }
+
             if (!RestoreAiSummaryIfSaved(_claimIdOnLoad)) {
                 InitAiSummary(_claimIdOnLoad, $('#hdnClaimSlNo').val());
             }
@@ -7298,6 +7321,14 @@
                     if (fields.dischargeDate && !spectraFields.dischargeDate)
                                              spectraFields.dischargeDate = fields.dischargeDate;
                     if (fields.doctorNotes)  spectraFields.doctorNotes   = fields.doctorNotes;
+                    // Restore ApprovedFacilityID from DB on page load
+                    if (fields.approvedFacilityId) {
+                        var $aprvDdl = $('#ddlApprovedFacility');
+                        if ($aprvDdl.find('option[value="' + fields.approvedFacilityId + '"]').length > 0) {
+                            $aprvDdl.val(fields.approvedFacilityId).trigger('change');
+                        }
+                        window._claimAI_approvedFacilityId = fields.approvedFacilityId;
+                    }
                 }
             } catch(e) {
                 console.warn('[ClaimAI] GetClaimFieldsForValidation failed:', e);
