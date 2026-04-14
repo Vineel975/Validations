@@ -7889,18 +7889,25 @@
             xhrFac.send(null);
             if (xhrFac.status === 200) {
                 var facFields = JSON.parse(xhrFac.responseText);
-                console.log('[ClaimAI] FacilityRestore - approvedFacilityId from DB:', facFields.approvedFacilityId);
                 if (facFields.approvedFacilityId && facFields.approvedFacilityId !== '0') {
-                    var $aprvDdl = $('#ddlApprovedFacility');
-                    var optCount = $aprvDdl.find('option').length;
-                    var optExists = $aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0;
-                    var currentVal = $aprvDdl.val();
-                    console.log('[ClaimAI] FacilityRestore - optCount:', optCount, 'optExists:', optExists, 'currentVal:', currentVal, 'disabled:', $aprvDdl.is(':disabled'));
-                    if (optExists) {
-                        $aprvDdl.val(facFields.approvedFacilityId);
-                        console.log('[ClaimAI] FacilityRestore - set to:', $aprvDdl.val());
-                    }
                     window._claimAI_approvedFacilityId = facFields.approvedFacilityId;
+                    var $aprvDdl = $('#ddlApprovedFacility');
+                    if ($aprvDdl.find('option[value="' + facFields.approvedFacilityId + '"]').length > 0) {
+                        $aprvDdl.val(facFields.approvedFacilityId);
+                        console.log('[ClaimAI] FacilityRestore set:', facFields.approvedFacilityId, 'current:', $aprvDdl.val());
+                    }
+                    // Watch for overwrite and re-apply
+                    var _savedFacId = facFields.approvedFacilityId;
+                    var _watchCount = 0;
+                    var _watchTimer = setInterval(function() {
+                        _watchCount++;
+                        var curVal = $('#ddlApprovedFacility').val();
+                        if (curVal !== _savedFacId) {
+                            console.log('[ClaimAI] FacilityRestore OVERWRITTEN from', curVal, 'restoring to', _savedFacId);
+                            $('#ddlApprovedFacility').val(_savedFacId);
+                        }
+                        if (_watchCount >= 10) clearInterval(_watchTimer); // stop after 5 seconds
+                    }, 500);
                 }
             }
         } catch(e) {
@@ -8862,6 +8869,8 @@
 
             $("#ddlReceivedAccomodation").change(function () {
                 var ID = $('#ddlReceivedAccomodation').val();
+                // Only auto-copy to approved if no DB-saved value exists
+                if (window._claimAI_approvedFacilityId) return;
                 if (ID != null && ID != "" && parseInt($('#hdnClaimTypeID').val()) == 2) {
                     $("#ddlApprovedFacility").val($('#ddlReceivedAccomodation').val());
                 }
