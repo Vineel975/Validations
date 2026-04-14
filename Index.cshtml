@@ -8555,21 +8555,15 @@
                     var icdSlots             = event.data.icdSlots             || [];
                     var eligibleAmount       = event.data.eligibleAmount       || 0;
 
-                    // Probable Diagnosis → txtProbableDiagnosis
+                    // Probable Diagnosis → txtProbableDiagnosis (always populate)
                     if (diagnosis) {
-                        var $diag = $('#txtProbableDiagnosis');
-                        if (!$diag.val() || $diag.val().trim() === '') {
-                            $diag.val(diagnosis).trigger('change');
-                        }
+                        $('#txtProbableDiagnosis').val(diagnosis).trigger('change');
                     }
 
-                    // Treatment Details → txtProbableLineOfTreatment
+                    // Treatment Details → txtProbableLineOfTreatment (always populate)
                     var treatmentValue = lineOfTreatment || diagnosis;
                     if (treatmentValue) {
-                        var $treatment = $('#txtProbableLineOfTreatment');
-                        if (!$treatment.val() || $treatment.val().trim() === '') {
-                            $treatment.val(treatmentValue).trigger('change');
-                        }
+                        $('#txtProbableLineOfTreatment').val(treatmentValue).trigger('change');
                     }
 
                     // Presenting Complaint → txtPresentComplaint
@@ -8610,13 +8604,14 @@
 
                     // Coding save is handled by setIcdSlots postMessage (sent after ICD fetch)
 
-                    // Auto-save hospitalization details
+                    // Auto-save hospitalization details — delay 500ms to ensure
+                    // setApprovedAccommodation postMessage has already fired and set window._claimAI_approvedFacilityId
                     setTimeout(function () {
                         var claimDetailsId = $('#hdnClaimDetailsID').val() || '';
                         var hospTypeId     = $('#ddlHospTreatmentType').val() || '';
 
-                        // Read approved facility — prefer stored value (set before setClinicalDetails fires)
-                        // then fall back to current dropdown value
+                        // Approved facility — use stored value from setApprovedAccommodation
+                        // fallback to current dropdown value
                         var approvedFacId = window._claimAI_approvedFacilityId || $('#ddlApprovedFacility').val() || '';
 
                         $.ajax({
@@ -8741,10 +8736,8 @@
                             $icon.addClass($icon.data('icon-show'));
                         });
                     }
-                    // Reload page after delay — gives all AJAX saves (billing, coding, clinical) time to complete
-                    setTimeout(function() {
-                        window.location.reload();
-                    }, 2500);
+                    // Reload immediately — all DB saves already triggered via AJAX before this message
+                    window.location.reload();
                 }
 
                 // ICD slots arrive after async fetch — triggers coding save
