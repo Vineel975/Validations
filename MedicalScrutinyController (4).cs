@@ -7617,12 +7617,207 @@ namespace Enrollment.Controllers
         /// </summary>
         [HttpGet]
         /// <summary>
-        /// Fetches tariff PDF for a claim from S3.
-        /// Flow:
-        ///   1. Claimsdetails → SlNo
-        ///   2. USP_ClaimMedicalScrutiny_Retrieve → ProviderID + MOUID
-        ///   3. Usp_TariffUploadDoc_FillDetails → latest PDF by UpdateDate
-        ///   4. S3 key: isOldDoc=="yes" → {WEBSHARE_PATH}{SystemFileName}
+        /// Fetches tariff PDF for a claim.
+        /// Prod/Preprod: S3 via Usp_TariffUploadDoc_FillDetails + ProviderID lookup.
+        /// Lower environments (dev/qa/uat): local file {LocalClaimDocPath}{claimId}-tariff.pdf.
+        /// Environment detected from Web.config key "Enviroment".
+        /// </summary>
+        public ActionResult GetTariffDocument(string claimId = null, string slNo = null)
+        {
+            var res = new ApiResponse<object>();
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                {
+                    res.Success = false; res.ErrorCode = "ErrorCode#1";
+                    res.Message = "Session expired.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                string cId = (claimId ?? "").Trim();
+
+                if (string.IsNullOrWhiteSpace(cId))
+                {
+                    // Fallback to local file if no claimId
+                    string fallbackPath = System.Configuration.ConfigurationManager.AppSettings["TariffDocumentPath"] ?? "";
+                    if (!string.IsNullOrWhiteSpace(fallbackPath) && System.IO.File.Exists(fallbackPath))
+                    {
+                        byte[] fb = System.IO.File.ReadAllBytes(fallbackPath);
+                        res.Success = true;
+                        res.Message = "Tariff loaded from fallback local path.";
+                        res.Data    = new { fileName = System.IO.Path.GetFileName(fallbackPath), base64Content = Convert.ToBase64String(fb) };
+                        var sf = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                        return Content(sf.Serialize(res), "application/json");
+                    }
+                    res.Success = false;
+                    res.Message = "ClaimID is required.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Detect environment
+                string env = (System.Configuration.ConfigurationManager.AppSettings["Enviroment"] ?? "dev").ToLower().Trim();
+                bool isProdOrPreprod = env == "prod" || env == "preprod" || env == "live";
+
+                if (!isProdOrPreprod)
+                {
+                    // ── Lower environments: local file {claimId}-tariff.pdf ────────────
+                    string localPath = Server.MapPath("~/ClaimAIDocs/");
+                    string filePath  = System.IO.Path.Combine(localPath, cId + "-tariff.pdf");
+                    if (!System.IO.File.Exists(filePath))
+                    {
+                        res.Success = false;
+                        res.Message = "Local tariff not found at: " + filePath + ". Add " + cId + "-tariff.pdf to ~/ClaimAIDocs/ folder in solution.";
+                        return Json(res, JsonRequestBehavior.AllowGet);
+                    }
+                    byte[] localBytes = System.IO.File.ReadAllBytes(filePath);
+                    res.Success = true;
+                    res.Message = "Tariff loaded from local file (" + env + ").";
+                    res.Data    = new { fileName = cId + "-tariff.pdf", base64Content = Convert.ToBase64String(localBytes) };
+                    var sl = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                    return Content(sl.Serialize(res), "application/json");
+                }
+
+                // ── Prod/Preprod: S3 via DB lookup ────────────────────────────────────
+                string connStr = System.Configuration.ConfigurationManager
+                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
+                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        connStr, "provider connection string=\"([^\"]+)\"",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                }
+
+                long claimIdLong = 0;
+                long.TryParse(cId, out claimIdLong);
+
+                // Step 1: Resolve SlNo
+                int slNoInt = 1;
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText = "SELECT TOP 1 Slno FROM Claimsdetails WHERE ClaimID=@cid AND ISNULL(Deleted,0)=0 ORDER BY Slno";
+                    cmd.Parameters.AddWithValue("@cid", claimIdLong);
+                    var val = cmd.ExecuteScalar();
+                    if (val != null && val != DBNull.Value) slNoInt = Convert.ToInt32(val);
+                }
+
+                // Step 2: Get ProviderID + MOUID
+                long providerId = 0;
+                string mouId    = "";
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd.CommandText = "USP_ClaimMedicalScrutiny_Retrieve";
+                    cmd.Parameters.AddWithValue("@ClaimID", claimIdLong);
+                    cmd.Parameters.AddWithValue("@SlNo",    slNoInt);
+                    cmd.Parameters.AddWithValue("@IsFrmArchived", 0);
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        if (rdr.Read())
+                        {
+                            if (!rdr.IsDBNull(rdr.GetOrdinal("ProviderID")))
+                                providerId = Convert.ToInt64(rdr["ProviderID"]);
+                            if (!rdr.IsDBNull(rdr.GetOrdinal("MOUID")))
+                                mouId = rdr["MOUID"].ToString();
+                        }
+                    }
+                }
+
+                if (providerId == 0)
+                {
+                    res.Success = false;
+                    res.Message = "ProviderID not found for claimId=" + cId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 3: Get latest tariff PDF from Usp_TariffUploadDoc_FillDetails
+                string systemFileName = "";
+                string isOldDoc       = "no";
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd.CommandText = "Usp_TariffUploadDoc_FillDetails";
+                    cmd.Parameters.AddWithValue("@ProviderID", providerId);
+                    cmd.Parameters.AddWithValue("@MOUID",      mouId);
+                    cmd.Parameters.AddWithValue("@Flag",        0);
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        DateTime latestDate = DateTime.MinValue;
+                        while (rdr.Read())
+                        {
+                            string fileType = rdr.IsDBNull(rdr.GetOrdinal("FileType")) ? "" : rdr["FileType"].ToString().ToLower();
+                            if (!fileType.Contains("pdf")) continue;
+                            DateTime updateDate = rdr.IsDBNull(rdr.GetOrdinal("UpdateDate")) ? DateTime.MinValue
+                                : Convert.ToDateTime(rdr["UpdateDate"]);
+                            if (updateDate >= latestDate)
+                            {
+                                latestDate     = updateDate;
+                                systemFileName = rdr["SystemFileName"].ToString();
+                                isOldDoc       = rdr.IsDBNull(rdr.GetOrdinal("isOldDoc")) ? "no"
+                                    : rdr["isOldDoc"].ToString().ToLower();
+                            }
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(systemFileName))
+                {
+                    res.Success = false;
+                    res.Message = "No PDF tariff document found for providerId=" + providerId + " MOUID=" + mouId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Step 4: Build S3 key
+                string s3Bucket  = System.Configuration.ConfigurationManager.AppSettings["ProviderDocbucketname"] ?? "prod-spectra-app-s3-provider-docs";
+                string docPath   = System.Configuration.ConfigurationManager.AppSettings["ProviderTariffDocumentPath"] ?? "TariffDocs/";
+                string webShare  = System.Configuration.ConfigurationManager.AppSettings["ProviderTariffDocumentPathWebShare"] ?? "TariffDocs/";
+                string accessKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocaccesskey"];
+                string secretKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocsecretkey"];
+
+                string s3Key = isOldDoc == "yes"
+                    ? webShare + systemFileName
+                    : providerId.ToString() + "/" + docPath + systemFileName;
+
+                // Step 5: Generate presigned URL and download
+                var s3Creds  = new Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey);
+                var s3Region = Amazon.RegionEndpoint.APSouth1;
+                string presignedUrl = "";
+                using (var s3Client = new Amazon.S3.AmazonS3Client(s3Creds, s3Region))
+                {
+                    var request = new Amazon.S3.Model.GetPreSignedUrlRequest
+                    {
+                        BucketName = s3Bucket,
+                        Key        = s3Key,
+                        Expires    = DateTime.Now.AddMinutes(15)
+                    };
+                    presignedUrl = s3Client.GetPreSignedURL(request);
+                }
+
+                byte[] pdfBytes;
+                using (var wc = new System.Net.WebClient())
+                    pdfBytes = wc.DownloadData(presignedUrl);
+
+                string fileName = providerId + "-tariff.pdf";
+                res.Success = true;
+                res.Message = "Tariff loaded from S3. Key: " + s3Key;
+                res.Data    = new { fileName = fileName, base64Content = Convert.ToBase64String(pdfBytes) };
+                var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                return Content(s.Serialize(res), "application/json");
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                res.Success = false;
+                res.Message = "Error loading tariff: " + ex.Message;
+                return Json(res, JsonRequestBehavior.AllowGet);
+            }
+        }
         ///                              else → {providerId}/{DOC_PATH}{SystemFileName}
         ///   5. Download → base64 → JSON
         /// </summary>
@@ -7803,8 +7998,10 @@ namespace Enrollment.Controllers
             }
         }
         /// <summary>
-        /// Fetches all claim documents from DMS API using token + claimdocumenturls,
-        /// downloads PDFs from pre-signed S3 URLs and merges into single base64 PDF.
+        /// Fetches medical bill PDF.
+        /// Prod/Preprod: DMS API → pre-signed S3 URLs → merge all PDFs.
+        /// Lower environments (dev/qa/uat): local file {LocalClaimDocPath}{claimId}-medicalbill.pdf.
+        /// Environment detected from Web.config key "Enviroment".
         /// </summary>
         public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
@@ -7828,11 +8025,34 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
+                // Detect environment — prod/preprod use DMS API, others use local files
+                string env = (System.Configuration.ConfigurationManager.AppSettings["Enviroment"] ?? "dev").ToLower().Trim();
+                bool isProdOrPreprod = env == "prod" || env == "preprod" || env == "live";
+
+                if (!isProdOrPreprod)
+                {
+                    // ── Lower environments: local file {claimId}-medicalbill.pdf ──────
+                    string localPath = Server.MapPath("~/ClaimAIDocs/");
+                    string filePath  = System.IO.Path.Combine(localPath, cId + "-medicalbill.pdf");
+                    if (!System.IO.File.Exists(filePath))
+                    {
+                        res.Success = false;
+                        res.Message = "Local medical bill not found at: " + filePath + ". Add " + cId + "-medicalbill.pdf to ~/ClaimAIDocs/ folder in solution.";
+                        return Json(res, JsonRequestBehavior.AllowGet);
+                    }
+                    byte[] localBytes = System.IO.File.ReadAllBytes(filePath);
+                    res.Success = true;
+                    res.Message = "Medical bill loaded from local file (" + env + ").";
+                    res.Data    = new { fileName = cId + "-medicalbill.pdf", base64Content = Convert.ToBase64String(localBytes) };
+                    var sl = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                    return Content(sl.Serialize(res), "application/json");
+                }
+
+                // ── Prod/Preprod: DMS API ─────────────────────────────────────────────
                 string dmsBaseUrl = System.Configuration.ConfigurationManager.AppSettings["DMSApiURL"].TrimEnd('/');
                 string clientId   = System.Configuration.ConfigurationManager.AppSettings["ClientID"];
                 string apiKey     = System.Configuration.ConfigurationManager.AppSettings["DMSAPIKey"];
 
-                // Force TLS 1.2
                 System.Net.ServicePointManager.SecurityProtocol =
                     System.Net.SecurityProtocolType.Tls12 |
                     System.Net.SecurityProtocolType.Tls11 |
@@ -7840,7 +8060,7 @@ namespace Enrollment.Controllers
                 System.Net.ServicePointManager.ServerCertificateValidationCallback =
                     (sender, cert, chain, errors) => true;
 
-                // Step 1: Generate token — returns raw JWT string
+                // Step 1: Generate token
                 string token = "";
                 {
                     var client  = new System.Net.Http.HttpClient();
@@ -7875,7 +8095,6 @@ namespace Enrollment.Controllers
                     docsJson = response.Content.ReadAsStringAsync().Result;
                 }
 
-                // Check valid JSON array
                 if (string.IsNullOrWhiteSpace(docsJson) || !docsJson.TrimStart().StartsWith("["))
                 {
                     res.Success = false;
@@ -7883,7 +8102,7 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Step 3: Parse document list — fields: documentUrl, documentName, documentCategory
+                // Step 3: Parse and download all PDFs
                 var docsList = Newtonsoft.Json.JsonConvert.DeserializeObject<List<dynamic>>(docsJson);
                 if (docsList == null || docsList.Count == 0)
                 {
@@ -7892,7 +8111,6 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Step 4: Download each PDF from pre-signed URL
                 var pdfBytesList = new System.Collections.Generic.List<byte[]>();
                 foreach (var doc in docsList)
                 {
@@ -7901,12 +8119,9 @@ namespace Enrollment.Controllers
                     try
                     {
                         using (var wc = new System.Net.WebClient())
-                        {
-                            byte[] pdfBytes = wc.DownloadData(docUrl);
-                            pdfBytesList.Add(pdfBytes);
-                        }
+                            pdfBytesList.Add(wc.DownloadData(docUrl));
                     }
-                    catch { /* skip failed downloads */ }
+                    catch { }
                 }
 
                 if (pdfBytesList.Count == 0)
@@ -7916,7 +8131,7 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Step 5: Merge all PDFs into one
+                // Step 4: Merge all PDFs
                 byte[] mergedBytes;
                 if (pdfBytesList.Count == 1)
                 {
@@ -7942,10 +8157,7 @@ namespace Enrollment.Controllers
                             mergedBytes = ms.ToArray();
                         }
                     }
-                    catch
-                    {
-                        mergedBytes = pdfBytesList[0];
-                    }
+                    catch { mergedBytes = pdfBytesList[0]; }
                 }
 
                 string fileName = cId + "-" + sNo + "-medical-bill.pdf";
@@ -7959,7 +8171,7 @@ namespace Enrollment.Controllers
             {
                 Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
                 res.Success = false;
-                res.Message = "Error loading medical bill from DMS: " + ex.Message;
+                res.Message = "Error loading medical bill: " + ex.Message;
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
         }
