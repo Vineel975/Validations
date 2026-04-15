@@ -9,6 +9,7 @@ using System.Data;
 using log4net;
 using log4net.Config;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using Newtonsoft.Json;
 using Resources;
@@ -7889,21 +7890,29 @@ namespace Enrollment.Controllers
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
-                    // Extract all PDFs, deduplicate by filename
+                    // Extract all PDFs, deduplicate by content hash (MD5)
+                    // Handles same content in different filenames
                     var pdfBytesList = new System.Collections.Generic.List<byte[]>();
-                    var seenNames    = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var seenHashes   = new System.Collections.Generic.HashSet<string>();
 
                     using (var zip = System.IO.Compression.ZipFile.OpenRead(zipPath))
                     {
                         foreach (var entry in zip.Entries)
                         {
                             if (!entry.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
-                            if (!seenNames.Add(entry.Name)) continue; // skip duplicate
                             using (var stream = entry.Open())
                             using (var ms = new System.IO.MemoryStream())
                             {
                                 stream.CopyTo(ms);
-                                pdfBytesList.Add(ms.ToArray());
+                                byte[] pdfBytes = ms.ToArray();
+
+                                // Compute MD5 hash of file content
+                                string hash;
+                                using (var md5 = System.Security.Cryptography.MD5.Create())
+                                    hash = BitConverter.ToString(md5.ComputeHash(pdfBytes)).Replace("-", "");
+
+                                if (!seenHashes.Add(hash)) continue; // skip duplicate content
+                                pdfBytesList.Add(pdfBytes);
                             }
                         }
                     }
@@ -8304,7 +8313,8 @@ namespace Enrollment.Controllers
         #endregion
 
 
-        /// <summary>Helper: merge list of PDF byte arrays into one using iTextSharp.</summary>
+        /// <summary>Helper: merge list of PDF byte arrays into one using iTextSharp.
+        /// Deduplicates at page level using MD5 hash of each page content.</summary>
         private byte[] MergePdfs(System.Collections.Generic.List<byte[]> pdfList)
         {
             if (pdfList.Count == 1) return pdfList[0];
@@ -8315,11 +8325,22 @@ namespace Enrollment.Controllers
                     var document = new iTextSharp.text.Document();
                     var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
                     document.Open();
+                    var seenPageHashes = new System.Collections.Generic.HashSet<string>();
+
                     foreach (var pdfBytes in pdfList)
                     {
                         var reader = new iTextSharp.text.pdf.PdfReader(pdfBytes);
                         for (int p = 1; p <= reader.NumberOfPages; p++)
+                        {
+                            // Hash raw page content stream to detect duplicate pages
+                            byte[] pageBytes = reader.GetPageContent(p);
+                            string pageHash;
+                            using (var md5 = System.Security.Cryptography.MD5.Create())
+                                pageHash = BitConverter.ToString(md5.ComputeHash(pageBytes ?? new byte[0])).Replace("-", "");
+
+                            if (!seenPageHashes.Add(pageHash)) continue; // skip duplicate page
                             writer.AddPage(writer.GetImportedPage(reader, p));
+                        }
                         reader.Close();
                     }
                     document.Close();
