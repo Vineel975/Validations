@@ -7855,6 +7855,10 @@ namespace Enrollment.Controllers
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
+                    // Log DB values for debugging
+                    var dbDebug = string.Join(" | ", dbFiles.Select(f => "FilePath=" + f.Item1 + " SysName=" + f.Item2).ToArray());
+                    res.Message = "DB files: " + dbDebug + " | webShareBase=" + webShareBase;
+
                     // Build WebShare URLs and download
                     var pdfBytesList = new System.Collections.Generic.List<byte[]>();
                     foreach (var entry in dbFiles)
@@ -7879,15 +7883,20 @@ namespace Enrollment.Controllers
                         }
                         catch (Exception ex)
                         {
-                            // Log and skip failed file
-                            Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(new Exception("WebShare download failed: " + fileUrl + " - " + ex.Message)));
+                            // Include URL in error message for debugging
+                            string errDetail = "WebShare download failed. URL tried: " + fileUrl + " | Error: " + ex.Message;
+                            Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(new Exception(errDetail)));
+                            // Surface error in response for easier debugging
+                            if (pdfBytesList.Count == 0)
+                                res.Message = errDetail;
                         }
                     }
 
                     if (pdfBytesList.Count == 0)
                     {
                         res.Success = false;
-                        res.Message = "Found " + dbFiles.Count + " docs in DB but none downloaded from WebShare. Check DMSWebShareBaseUrl config.";
+                        if (string.IsNullOrWhiteSpace(res.Message))
+                            res.Message = "Found " + dbFiles.Count + " docs in DB but none downloaded from WebShare. Check DMSWebShareBaseUrl config.";
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
