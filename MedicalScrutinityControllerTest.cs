@@ -7783,204 +7783,6 @@ namespace Enrollment.Controllers
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
         }
-        {
-            var res = new ApiResponse<object>();
-            try
-            {
-                if (Session[SessionValue.UserRegionID] == null)
-                {
-                    res.Success = false; res.ErrorCode = "ErrorCode#1";
-                    res.Message = "Session expired.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                string cId = (claimId ?? "").Trim();
-
-                if (string.IsNullOrWhiteSpace(cId))
-                {
-                    // Fallback to local file if no claimId
-                    string fallbackPath = System.Configuration.ConfigurationManager.AppSettings["TariffDocumentPath"] ?? "";
-                    if (!string.IsNullOrWhiteSpace(fallbackPath) && System.IO.File.Exists(fallbackPath))
-                    {
-                        byte[] fb = System.IO.File.ReadAllBytes(fallbackPath);
-                        res.Success = true;
-                        res.Message = "Tariff loaded from fallback local path.";
-                        res.Data    = new { fileName = System.IO.Path.GetFileName(fallbackPath), base64Content = Convert.ToBase64String(fb) };
-                        var sf = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                        return Content(sf.Serialize(res), "application/json");
-                    }
-                    res.Success = false;
-                    res.Message = "ClaimID is required.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                // Detect environment
-                string env = (System.Configuration.ConfigurationManager.AppSettings["Enviroment"] ?? "dev").ToLower().Trim();
-                bool isProdOrPreprod = env == "prod" || env == "preprod" || env == "live";
-
-                if (!isProdOrPreprod)
-                {
-                    // ── Lower environments: local file {claimId}-tariff.pdf ────────────
-                    string localPath = Server.MapPath("~/ClaimAIDocs/");
-                    string filePath  = System.IO.Path.Combine(localPath, cId + "-tariff.pdf");
-                    if (!System.IO.File.Exists(filePath))
-                    {
-                        res.Success = false;
-                        res.Message = "Local tariff not found at: " + filePath + ". Add " + cId + "-tariff.pdf to ~/ClaimAIDocs/ folder in solution.";
-                        return Json(res, JsonRequestBehavior.AllowGet);
-                    }
-                    byte[] localBytes = System.IO.File.ReadAllBytes(filePath);
-                    res.Success = true;
-                    res.Message = "Tariff loaded from local file (" + env + ").";
-                    res.Data    = new { fileName = cId + "-tariff.pdf", base64Content = Convert.ToBase64String(localBytes) };
-                    var sl = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                    return Content(sl.Serialize(res), "application/json");
-                }
-
-                // ── Prod/Preprod: S3 via DB lookup ────────────────────────────────────
-                string connStr = System.Configuration.ConfigurationManager
-                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
-                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
-                {
-                    var m = System.Text.RegularExpressions.Regex.Match(
-                        connStr, "provider connection string=\"([^\"]+)\"",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
-                }
-
-                long claimIdLong = 0;
-                long.TryParse(cId, out claimIdLong);
-
-                // Step 1: Resolve SlNo
-                int slNoInt = 1;
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandText = "SELECT TOP 1 Slno FROM Claimsdetails WHERE ClaimID=@cid AND ISNULL(Deleted,0)=0 ORDER BY Slno";
-                    cmd.Parameters.AddWithValue("@cid", claimIdLong);
-                    var val = cmd.ExecuteScalar();
-                    if (val != null && val != DBNull.Value) slNoInt = Convert.ToInt32(val);
-                }
-
-                // Step 2: Get ProviderID + MOUID
-                long providerId = 0;
-                string mouId    = "";
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
-                    cmd.CommandText = "USP_ClaimMedicalScrutiny_Retrieve";
-                    cmd.Parameters.AddWithValue("@ClaimID", claimIdLong);
-                    cmd.Parameters.AddWithValue("@SlNo",    slNoInt);
-                    cmd.Parameters.AddWithValue("@IsFrmArchived", 0);
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        if (rdr.Read())
-                        {
-                            if (!rdr.IsDBNull(rdr.GetOrdinal("ProviderID")))
-                                providerId = Convert.ToInt64(rdr["ProviderID"]);
-                            if (!rdr.IsDBNull(rdr.GetOrdinal("MOUID")))
-                                mouId = rdr["MOUID"].ToString();
-                        }
-                    }
-                }
-
-                if (providerId == 0)
-                {
-                    res.Success = false;
-                    res.Message = "ProviderID not found for claimId=" + cId;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                // Step 3: Get latest tariff PDF from Usp_TariffUploadDoc_FillDetails
-                string systemFileName = "";
-                string isOldDoc       = "no";
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
-                    cmd.CommandText = "Usp_TariffUploadDoc_FillDetails";
-                    cmd.Parameters.AddWithValue("@ProviderID", providerId);
-                    cmd.Parameters.AddWithValue("@MOUID",      mouId);
-                    cmd.Parameters.AddWithValue("@Flag",        0);
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        DateTime latestDate = DateTime.MinValue;
-                        while (rdr.Read())
-                        {
-                            string fileType = rdr.IsDBNull(rdr.GetOrdinal("FileType")) ? "" : rdr["FileType"].ToString().ToLower();
-                            if (!fileType.Contains("pdf")) continue;
-                            DateTime updateDate = rdr.IsDBNull(rdr.GetOrdinal("UpdateDate")) ? DateTime.MinValue
-                                : Convert.ToDateTime(rdr["UpdateDate"]);
-                            if (updateDate >= latestDate)
-                            {
-                                latestDate     = updateDate;
-                                systemFileName = rdr["SystemFileName"].ToString();
-                                isOldDoc       = rdr.IsDBNull(rdr.GetOrdinal("isOldDoc")) ? "no"
-                                    : rdr["isOldDoc"].ToString().ToLower();
-                            }
-                        }
-                    }
-                }
-
-                if (string.IsNullOrWhiteSpace(systemFileName))
-                {
-                    res.Success = false;
-                    res.Message = "No PDF tariff document found for providerId=" + providerId + " MOUID=" + mouId;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-
-                // Step 4: Build S3 key
-                string s3Bucket  = System.Configuration.ConfigurationManager.AppSettings["ProviderDocbucketname"] ?? "prod-spectra-app-s3-provider-docs";
-                string docPath   = System.Configuration.ConfigurationManager.AppSettings["ProviderTariffDocumentPath"] ?? "TariffDocs/";
-                string webShare  = System.Configuration.ConfigurationManager.AppSettings["ProviderTariffDocumentPathWebShare"] ?? "TariffDocs/";
-                string accessKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocaccesskey"];
-                string secretKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocsecretkey"];
-
-                string s3Key = isOldDoc == "yes"
-                    ? webShare + systemFileName
-                    : providerId.ToString() + "/" + docPath + systemFileName;
-
-                // Step 5: Generate presigned URL and download
-                var s3Creds  = new Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey);
-                var s3Region = Amazon.RegionEndpoint.APSouth1;
-                string presignedUrl = "";
-                using (var s3Client = new Amazon.S3.AmazonS3Client(s3Creds, s3Region))
-                {
-                    var request = new Amazon.S3.Model.GetPreSignedUrlRequest
-                    {
-                        BucketName = s3Bucket,
-                        Key        = s3Key,
-                        Expires    = DateTime.Now.AddMinutes(15)
-                    };
-                    presignedUrl = s3Client.GetPreSignedURL(request);
-                }
-
-                byte[] pdfBytes;
-                using (var wc = new System.Net.WebClient())
-                    pdfBytes = wc.DownloadData(presignedUrl);
-
-                string fileName = providerId + "-tariff.pdf";
-                res.Success = true;
-                res.Message = "Tariff loaded from S3. Key: " + s3Key;
-                res.Data    = new { fileName = fileName, base64Content = Convert.ToBase64String(pdfBytes) };
-                var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                return Content(s.Serialize(res), "application/json");
-            }
-            catch (Exception ex)
-            {
-                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
-                res.Success = false;
-                res.Message = "Error loading tariff: " + ex.Message;
-                return Json(res, JsonRequestBehavior.AllowGet);
-            }
-        }
-        ///                              else → {providerId}/{DOC_PATH}{SystemFileName}
-        ///   5. Download → base64 → JSON
-        /// </summary>
         /// <summary>
         /// Fetches medical bill PDF.
         /// Prod/Preprod/Live : DMS API → pre-signed S3 URLs → merge all PDFs.
@@ -8025,7 +7827,7 @@ namespace Enrollment.Controllers
                         var m = System.Text.RegularExpressions.Regex.Match(
                             connStr, "provider connection string=\"([^\"]+)\"",
                             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                        if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                        if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                     }
 
                     var dbFiles = new System.Collections.Generic.List<System.Tuple<string, string>>();
@@ -8709,7 +8511,7 @@ namespace Enrollment.Controllers
                     var m2 = System.Text.RegularExpressions.Regex.Match(connStr,
                         @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m2.Success) connStr = m2.Groups[1].Value.Replace("&quot;", """);
+                    if (m2.Success) connStr = m2.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 int tpaLevel1Id = 0, tpaLevel2Id = 0, icdNumericId = 0;
