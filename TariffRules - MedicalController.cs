@@ -4613,6 +4613,37 @@ namespace Enrollment.Controllers
             //}
         }
 
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
         #endregion
 
         public string GetBSI(long MemberPolicyID, int SITypeID, long ClaimID, byte SlNo)
@@ -5525,6 +5556,37 @@ namespace Enrollment.Controllers
             }
         }
         //**************************************************************  
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
         #endregion
 
         #region RetainSIAmountsToReserved
@@ -5573,6 +5635,37 @@ namespace Enrollment.Controllers
             return JsonConvert.SerializeObject(objRes);
         }
         //**************************************************************  
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
         #endregion
 
         public string For_Repudiated_Insert(Int64 ClaimID, Int32 Slno, string Remarks)
@@ -5653,6 +5746,37 @@ namespace Enrollment.Controllers
             jsonResult.MaxJsonLength = int.MaxValue;
             return jsonResult;
         }
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
         #endregion
 
         public string GeneratingApprovalLetter(string ClaimDetails, bool isApprove, string PolicyType, string MainMemberPolicyID, string PolicyID, string ProviderID,
@@ -6385,6 +6509,37 @@ namespace Enrollment.Controllers
 
         }
 
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
         #endregion
 
         #region Bima Satark Details
@@ -6536,6 +6691,37 @@ namespace Enrollment.Controllers
             data.Columns.Add("txtradio3");
             return data;
         }
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
         #endregion
 
         [HttpPost]
@@ -7924,12 +8110,12 @@ namespace Enrollment.Controllers
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
-                    byte[] mergedLocal = MergePdfs(pdfBytesList);
-                    // Log size to help diagnose Convex timeout
-                    double sizeMb = Math.Round(mergedLocal.Length / 1048576.0, 2);
+                    byte[] mergedLocal   = MergePdfs(pdfBytesList);
+                    byte[] compressedLocal = CompressPdf(mergedLocal);
+                    double sizeMb = Math.Round(compressedLocal.Length / 1048576.0, 2);
                     res.Success = true;
-                    res.Message = "Medical bill loaded from zip. Files: " + pdfBytesList.Count + " | MergedSize: " + sizeMb + "MB";
-                    res.Data    = new { fileName = cId + "-medicalbill.pdf", base64Content = Convert.ToBase64String(mergedLocal) };
+                    res.Message = "Medical bill loaded from zip. Files: " + pdfBytesList.Count + " | Size: " + sizeMb + "MB";
+                    res.Data    = new { fileName = cId + "-medicalbill.pdf", base64Content = Convert.ToBase64String(compressedLocal) };
                     var sl = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                     return Content(sl.Serialize(res), "application/json");
                 }
@@ -8310,6 +8496,37 @@ namespace Enrollment.Controllers
                 res.Message = "Error loading tariff: " + ex.Message;
                 return Json(res, JsonRequestBehavior.AllowGet);
             }
+        }
+
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
         }
 
         #endregion
