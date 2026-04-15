@@ -1,0 +1,37 @@
+const XLSX = require('xlsx');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+
+function convertExcelToPDF(inputPath, outputPath) {
+    // Read Excel file
+    const workbook = XLSX.readFile(inputPath);
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    // Convert sheet to JSON
+    const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // Create PDF
+    const doc = new PDFDocument({ margin: 30 });
+    doc.pipe(fs.createWriteStream(outputPath));
+
+    let y = 20;
+
+    data.forEach((row) => {
+        let x = 20;
+
+        row.forEach((cell) => {
+            doc.text(String(cell ?? ""), x, y);
+            x += 100; // column spacing
+        });
+
+        y += 20; // row spacing
+    });
+
+    doc.end();
+}
+
+// 👉 Change file paths here
+convertExcelToPDF('input.xlsx', 'output.pdf');
+
+console.log("PDF created successfully!");
