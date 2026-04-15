@@ -7925,8 +7925,10 @@ namespace Enrollment.Controllers
                     }
 
                     byte[] mergedLocal = MergePdfs(pdfBytesList);
+                    // Log size to help diagnose Convex timeout
+                    double sizeMb = Math.Round(mergedLocal.Length / 1048576.0, 2);
                     res.Success = true;
-                    res.Message = "Medical bill loaded from zip. Files: " + pdfBytesList.Count;
+                    res.Message = "Medical bill loaded from zip. Files: " + pdfBytesList.Count + " | MergedSize: " + sizeMb + "MB";
                     res.Data    = new { fileName = cId + "-medicalbill.pdf", base64Content = Convert.ToBase64String(mergedLocal) };
                     var sl = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                     return Content(sl.Serialize(res), "application/json");
@@ -8326,12 +8328,17 @@ namespace Enrollment.Controllers
                     var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
                     document.Open();
                     var seenPageHashes = new System.Collections.Generic.HashSet<string>();
+                    int totalPages = 0;
+                    const int maxPages = 60; // cap at 60 pages to avoid Convex timeout
 
                     foreach (var pdfBytes in pdfList)
                     {
+                        if (totalPages >= maxPages) break;
                         var reader = new iTextSharp.text.pdf.PdfReader(pdfBytes);
                         for (int p = 1; p <= reader.NumberOfPages; p++)
                         {
+                            if (totalPages >= maxPages) break;
+
                             // Hash raw page content stream to detect duplicate pages
                             byte[] pageBytes = reader.GetPageContent(p);
                             string pageHash;
@@ -8340,6 +8347,7 @@ namespace Enrollment.Controllers
 
                             if (!seenPageHashes.Add(pageHash)) continue; // skip duplicate page
                             writer.AddPage(writer.GetImportedPage(reader, p));
+                            totalPages++;
                         }
                         reader.Close();
                     }
