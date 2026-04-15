@@ -46,7 +46,6 @@ interface ProcessPdfOptions {
   medicalAdmissibility?: MedicalAdmissibilityItem | null;
 }
 
-
 interface ProcessBaseDocumentOptions {
   fileName: string;
   pdfBuffer: Buffer;
@@ -67,12 +66,8 @@ const MAX_LOG_TEXT_LENGTH = 500;
 
 function formatGeneratedTextForLog(text: string | undefined): string {
   if (!text) return "<empty>";
-
   const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= MAX_LOG_TEXT_LENGTH) {
-    return normalized;
-  }
-
+  if (normalized.length <= MAX_LOG_TEXT_LENGTH) return normalized;
   return `${normalized.slice(0, MAX_LOG_TEXT_LENGTH)}... [truncated ${normalized.length - MAX_LOG_TEXT_LENGTH} chars]`;
 }
 
@@ -99,9 +94,7 @@ async function processMedicalAdmissibilityWithAI({
   cost: number;
   usage: TokenUsage;
 }> {
-  logger.debug(
-    `[DEBUG] processMedicalAdmissibilityWithAI: Starting extraction`
-  );
+  logger.debug(`[DEBUG] processMedicalAdmissibilityWithAI: Starting extraction`);
   try {
     const { object, usage } = await generateObject({
       model: getModel({ provider, modelName }),
@@ -132,8 +125,7 @@ async function processMedicalAdmissibilityWithAI({
       providers,
     });
 
-    const normalizedMedicalAdmissibility =
-      normalizeMedicalAdmissibility(object);
+    const normalizedMedicalAdmissibility = normalizeMedicalAdmissibility(object);
 
     return {
       medicalAdmissibility: normalizedMedicalAdmissibility,
@@ -142,30 +134,15 @@ async function processMedicalAdmissibilityWithAI({
     };
   } catch (error) {
     if (NoObjectGeneratedError.isInstance(error)) {
-      logger.error(
-        `[ERROR] processMedicalAdmissibilityWithAI: Model failed to generate object (NoObjectGeneratedError)`
-      );
+      logger.error(`[ERROR] processMedicalAdmissibilityWithAI: NoObjectGeneratedError`);
       logger.error(`[ERROR] Cause:`, error.cause);
-      logger.error(
-        `[ERROR] Generated text snippet:`,
-        formatGeneratedTextForLog(error.text)
-      );
+      logger.error(`[ERROR] Generated text snippet:`, formatGeneratedTextForLog(error.text));
       logger.error(`[ERROR] Finish reason:`, error.finishReason);
-      if (error.usage) {
-        logger.error(`[ERROR] Token usage:`, error.usage);
-      }
+      if (error.usage) logger.error(`[ERROR] Token usage:`, error.usage);
     } else {
-      logger.error(
-        `[ERROR] processMedicalAdmissibilityWithAI: Error occurred:`,
-        error
-      );
+      logger.error(`[ERROR] processMedicalAdmissibilityWithAI: Error occurred:`, error);
     }
-    // Return null if extraction fails
-    return {
-      medicalAdmissibility: null,
-      cost: 0,
-      usage: createTokenUsage(0, 0),
-    };
+    return { medicalAdmissibility: null, cost: 0, usage: createTokenUsage(0, 0) };
   }
 }
 
@@ -180,9 +157,7 @@ async function processBaseDocumentWithAI({
   cost: number;
   usage: TokenUsage;
 }> {
-  logger.debug(
-    `[DEBUG] processBaseDocumentWithAI: Starting extraction (using full PDF)`
-  );
+  logger.debug(`[DEBUG] processBaseDocumentWithAI: Starting extraction`);
   try {
     const { object, usage } = await generateObject({
       model: getModel({ provider, modelName }),
@@ -214,7 +189,7 @@ async function processBaseDocumentWithAI({
     });
 
     logger.debug(
-      `[DEBUG] processBaseDocumentWithAI: Base document extraction summary:`,
+      `[DEBUG] processBaseDocumentWithAI: Extraction summary:`,
       summarizeBaseDocumentExtraction(object)
     );
 
@@ -225,18 +200,11 @@ async function processBaseDocumentWithAI({
     };
   } catch (error) {
     if (NoObjectGeneratedError.isInstance(error)) {
-      logger.error(
-        `[ERROR] processBaseDocumentWithAI: Model failed to generate object (NoObjectGeneratedError)`
-      );
+      logger.error(`[ERROR] processBaseDocumentWithAI: NoObjectGeneratedError`);
       logger.error(`[ERROR] Cause:`, error.cause);
-      logger.error(
-        `[ERROR] Generated text snippet:`,
-        formatGeneratedTextForLog(error.text)
-      );
+      logger.error(`[ERROR] Generated text snippet:`, formatGeneratedTextForLog(error.text));
       logger.error(`[ERROR] Finish reason:`, error.finishReason);
-      if (error.usage) {
-        logger.error(`[ERROR] Token usage:`, error.usage);
-      }
+      if (error.usage) logger.error(`[ERROR] Token usage:`, error.usage);
     } else {
       logger.error(`[ERROR] processBaseDocumentWithAI: Error occurred:`, error);
     }
@@ -252,7 +220,7 @@ async function processPdfWithAI({
   providers,
   baseDocument: providedBaseDocument,
   medicalAdmissibility: providedMedicalAdmissibility,
-    }: ProcessPdfOptions): Promise<{
+}: ProcessPdfOptions): Promise<{
   analysis: PdfAnalysis;
   cost: number;
   usage: TokenUsage;
@@ -266,66 +234,42 @@ async function processPdfWithAI({
   let medicalAdmissibility: MedicalAdmissibilityItem | null = null;
   let normalizedServices: ServiceItem[] | null = null;
 
-  logger.debug(
-    `[DEBUG] processPdfWithAI: Step 1/2 - document sections (base document, hospital summary, medical admissibility)`
-  );
+  logger.debug(`[DEBUG] processPdfWithAI: Step 1/2 - extracting document sections`);
   try {
     const hasProvidedSections = providedMedicalAdmissibility !== undefined;
 
     if (!providedBaseDocument) {
-      logger.debug(
-        `[DEBUG] processPdfWithAI: Starting base document and medical admissibility extraction`
-      );
-      const [baseDocResult, admissResult] = await Promise.all([
-        processBaseDocumentWithAI({
-          fileName,
-          pdfBuffer,
-          modelName,
-          provider,
-          providers,
-        }),
-        processMedicalAdmissibilityWithAI({
-          fileName,
-          pdfBuffer,
-          modelName,
-          provider,
-          providers,
-        }),
-      ]);
+      logger.debug(`[DEBUG] processPdfWithAI: Running base document extraction`);
+      // ── Run SEQUENTIALLY instead of Promise.all to reduce peak memory ──────
+      const baseDocResult = await processBaseDocumentWithAI({
+        fileName, pdfBuffer, modelName, provider, providers,
+      });
+      logger.debug(`[DEBUG] processPdfWithAI: ✓ Base document done, starting medical admissibility`);
 
-      logger.debug(
-        `[DEBUG] processPdfWithAI: ✓ Base document and medical admissibility extraction completed`
-      );
-      baseDocument = baseDocResult.baseDocument;
-      hospitalSummary = [];
+      const admissResult = await processMedicalAdmissibilityWithAI({
+        fileName, pdfBuffer, modelName, provider, providers,
+      });
+      logger.debug(`[DEBUG] processPdfWithAI: ✓ Medical admissibility done`);
+
+      baseDocument        = baseDocResult.baseDocument;
+      hospitalSummary     = [];
       medicalAdmissibility = admissResult.medicalAdmissibility;
       costs.addCostedData(baseDocResult);
       costs.addCostedData(admissResult);
+
     } else if (hasProvidedSections) {
-      logger.debug(`[DEBUG] processPdfWithAI: Using provided base document`);
-      baseDocument = providedBaseDocument;
-      hospitalSummary = [];
+      logger.debug(`[DEBUG] processPdfWithAI: Using provided base document and admissibility`);
+      baseDocument         = providedBaseDocument;
+      hospitalSummary      = [];
       medicalAdmissibility = providedMedicalAdmissibility || null;
-      logger.debug(
-        `[DEBUG] processPdfWithAI: ✓ Reuse complete - medical admissibility: ${medicalAdmissibility ? "present" : "missing"}`
-      );
     } else {
-      logger.debug(`[DEBUG] processPdfWithAI: Using provided base document`);
-      logger.debug(
-        `[DEBUG] processPdfWithAI: Starting medical admissibility extraction`
-      );
+      logger.debug(`[DEBUG] processPdfWithAI: Using provided base document, extracting admissibility`);
       baseDocument = providedBaseDocument;
       const admissResult = await processMedicalAdmissibilityWithAI({
-        fileName,
-        pdfBuffer,
-        modelName,
-        provider,
-        providers,
+        fileName, pdfBuffer, modelName, provider, providers,
       });
-      logger.debug(
-        `[DEBUG] processPdfWithAI: ✓ Medical admissibility extraction completed`
-      );
-      hospitalSummary = [];
+      logger.debug(`[DEBUG] processPdfWithAI: ✓ Medical admissibility done`);
+      hospitalSummary      = [];
       medicalAdmissibility = admissResult.medicalAdmissibility;
       costs.addCostedData(admissResult);
     }
@@ -335,8 +279,7 @@ async function processPdfWithAI({
   }
 
   logger.debug(
-    `[DEBUG] processPdfWithAI: ✓ Document sections ready - hospital summary items: ${hospitalSummary.length
-    }, medical admissibility: ${medicalAdmissibility ? "present" : "missing"}`
+    `[DEBUG] processPdfWithAI: ✓ Sections ready - medicalAdmissibility: ${medicalAdmissibility ? "present" : "missing"}`
   );
 
   normalizedServices = [];
@@ -353,16 +296,13 @@ async function processPdfWithAI({
     eyeType: "cant determine",
     tariffPageNumber: null,
     services: normalizedServices || [],
-    serviceDeductibles:
-      serviceDeductibles.length > 0 ? serviceDeductibles : undefined,
-    hospitalSummary: hospitalSummary.length > 0 ? hospitalSummary : undefined,
+    serviceDeductibles: serviceDeductibles.length > 0 ? serviceDeductibles : undefined,
+    hospitalSummary:    hospitalSummary.length > 0 ? hospitalSummary : undefined,
     medicalAdmissibility: medicalAdmissibility || undefined,
   };
 
   const { totalCost, usage } = costs.snapshot();
-  logger.debug(
-    `[DEBUG] processPdfWithAI: ✓ Processing completed (tokens: ${usage.totalTokens})`
-  );
+  logger.debug(`[DEBUG] processPdfWithAI: ✓ Done (tokens: ${usage.totalTokens})`);
   return { analysis, cost: totalCost, usage };
 }
 
@@ -396,38 +336,35 @@ export async function processSinglePdf({
   providers,
   timeoutMs = 600_000,
 }: ProcessSinglePdfOptions): Promise<ProcessSinglePdfResult> {
-
   logger.debug(
-    `[DEBUG] processSinglePdf: Starting processing - model: ${provider}/${modelName}, timeout: ${timeoutMs}ms`
+    `[DEBUG] processSinglePdf: Starting - model: ${provider}/${modelName}, timeout: ${timeoutMs}ms, bufferSize: ${pdfBuffer.length} bytes`
   );
   const processingStartTime = Date.now();
-  const processingTracker = new CostTracker();
+  const processingTracker   = new CostTracker();
 
   let successCount = 0;
-  let errorCount = 0;
-
+  let errorCount   = 0;
   const fileStartTime = Date.now();
 
   try {
-    logger.debug(`[DEBUG] processSinglePdf: Starting processing`);
-    // Initial extraction with primary model
+    logger.debug(`[DEBUG] processSinglePdf: Starting PDF processing`);
     const {
       analysis: initialAnalysis,
-      cost: initialCost,
-      usage: initialUsage,
+      cost:     initialCost,
+      usage:    initialUsage,
     } = await processPdfWithAI({
       fileName,
       pdfBuffer,
       modelName,
       provider,
       providers,
-      baseDocument: undefined,
+      baseDocument:        undefined,
       medicalAdmissibility: undefined,
     });
 
     const initialProcessingTimeMs = Date.now() - fileStartTime;
     logger.debug(
-      `[DEBUG] processSinglePdf: Initial extraction completed - time: ${initialProcessingTimeMs}ms, tokens: ${initialUsage.totalTokens}`
+      `[DEBUG] processSinglePdf: Extraction completed - time: ${initialProcessingTimeMs}ms, tokens: ${initialUsage.totalTokens}`
     );
 
     processingTracker.add(initialCost, initialUsage);
@@ -435,48 +372,40 @@ export async function processSinglePdf({
     const result: ExtractionResult = {
       filePath: fileName,
       analysis: initialAnalysis,
-      cost: initialCost,
-      usage: initialUsage,
+      cost:     initialCost,
+      usage:    initialUsage,
     };
 
     successCount++;
-        const totalTimeMs = Date.now() - processingStartTime;
-        const { totalCost, usage } = processingTracker.snapshot();
-        logger.debug(
-          `[DEBUG] processSinglePdf: Processing completed - success: ${successCount}, errors: ${errorCount}, total time: ${totalTimeMs}ms, total tokens: ${usage.totalTokens}`
-        );
+    const totalTimeMs       = Date.now() - processingStartTime;
+    const { totalCost, usage } = processingTracker.snapshot();
+    logger.debug(
+      `[DEBUG] processSinglePdf: Done - success: ${successCount}, errors: ${errorCount}, time: ${totalTimeMs}ms, tokens: ${usage.totalTokens}`
+    );
 
-        return {
-          result,
-          totals: {
-            totalCost,
-            totalPromptTokens: usage.inputTokens,
-            totalCompletionTokens: usage.outputTokens,
-            totalTokens: usage.totalTokens,
-            successCount,
-            errorCount,
-            totalTimeMs,
-          },
-        };
-      } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-    logger.error(
-      `[DEBUG] processSinglePdf: Error processing:`,
-      error
-    );
-    logger.error(
-      `[DEBUG] processSinglePdf: Error message: ${errorMessage}`
-    );
+    return {
+      result,
+      totals: {
+        totalCost,
+        totalPromptTokens:      usage.inputTokens,
+        totalCompletionTokens:  usage.outputTokens,
+        totalTokens:            usage.totalTokens,
+        successCount,
+        errorCount,
+        totalTimeMs,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`[DEBUG] processSinglePdf: Error processing:`, error);
+    logger.error(`[DEBUG] processSinglePdf: Error message: ${errorMessage}`);
     errorCount++;
-
-    // Skip this file - don't add to results, just log and continue
   }
 
-  const totalTimeMs = Date.now() - processingStartTime;
-  const { usage } = processingTracker.snapshot();
+  const totalTimeMs  = Date.now() - processingStartTime;
+  const { usage }    = processingTracker.snapshot();
   logger.debug(
-    `[DEBUG] processSinglePdf: Processing completed with errors - success: ${successCount}, errors: ${errorCount}, total time: ${totalTimeMs}ms, total tokens: ${usage.totalTokens}`
+    `[DEBUG] processSinglePdf: Completed with errors - success: ${successCount}, errors: ${errorCount}, time: ${totalTimeMs}ms, tokens: ${usage.totalTokens}`
   );
 
   throw new Error("Failed to process PDF");
