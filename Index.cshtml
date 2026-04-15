@@ -8765,40 +8765,17 @@
                 if (event.data.type === 'claimAISaveComplete') {
                     var savedJobId = event.data.jobId || '';
 
-                    // Wait for all AJAX saves to settle, then trigger Spectra save buttons
+                    // All AJAX saves (clinical, billing, coding) already triggered
+                    // via postMessages before claimAISaveComplete fires.
+                    // Just store jobId and reload — no button clicks needed
+                    // (btnServiceBillDetailsSave is type=submit and causes navigation)
                     setTimeout(function() {
-                        // Trigger Hospitalization Details save button
-                        var $hospBtn = $('#btnHospDetailsSave');
-                        if ($hospBtn.length && $hospBtn.is(':visible')) {
-                            $hospBtn.trigger('click');
-                            console.log('[ClaimAI] Triggered btnHospDetailsSave');
-                        }
-
-                        // Trigger Coding Details save button
-                        var $codingBtn = $('#btnCodingDetails');
-                        if ($codingBtn.length && $codingBtn.is(':visible')) {
-                            $codingBtn.trigger('click');
-                            console.log('[ClaimAI] Triggered btnCodingDetails');
-                        }
-
-                        // Trigger Billing Details save button
-                        var $billBtn = $('#btnServiceBillDetailsSave');
-                        if ($billBtn.length && $billBtn.is(':visible')) {
-                            $billBtn.trigger('click');
-                            console.log('[ClaimAI] Triggered btnServiceBillDetailsSave');
-                        }
-
-                        // Store jobId and reload after saves complete
                         if (savedJobId) {
                             sessionStorage.setItem('claimAI_jobId', savedJobId);
                             sessionStorage.setItem('claimAI_claimId', $('#hdnClaimID').val());
                         }
-
-                        setTimeout(function() {
-                            window.location.reload();
-                        }, 2000);
-
-                    }, 800);
+                        window.location.reload();
+                    }, 1500);
 
                     // Collapse AI summary widget immediately
                     var $widget = $('#divAiSummary');
