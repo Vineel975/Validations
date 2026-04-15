@@ -4,3 +4,5 @@ https://spectra-app-qa.fhpl.net/DMSDocuments/2026/2026-4/2026-4-14/26041406227-1
 
                         relativePath = relativePath.TrimStart('/').TrimStart('\').Replace('\', ' / ');
 
+Could not load medical bill: WebShare download failed. URL tried: https://spectra-app-qa.fhpl.net/DMSDocuments/2026/2026-4/2026-4-14/26041406227-1/418c55b3-5fd9-4730-88e3-5be3451140e4_134206389613128707.pdf | Error: The request was aborted: Could not create SSL/TLS secure channel.
+
