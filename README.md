@@ -1,11 +1,14 @@
-https://spectra-app-qa.fhpl.net/DMSDocuments/2026/2026-4/2026-4-9/3954fd6f-cc91-4381-8fc1-d88af6b5356a_134202098991762808.pdf
+-- Files where FilePath ends with date folder (no claim subfolder)
+SELECT TOP 5 FilePath, SystemFileName, Name
+FROM DMSFileinfo_Claims
+WHERE FilePath NOT LIKE '%[0-9]-[0-9]/%[0-9]-%[0-9]/%'
+AND FilePath LIKE '%DMSDocuments%'
+AND Deleted = 0
+ORDER BY ID DESC
 
-https://spectra-app-qa.fhpl.net/DMSDocuments/2026/2026-4/2026-4-14/26041406227-1/418c55b3-5fd9-4730-88e3-5be3451140e4_134206389613128707.pdf
-
-                        relativePath = relativePath.TrimStart('/').TrimStart('\').Replace('\', ' / ');
-
-Could not load medical bill: WebShare download failed. URL tried: https://spectra-app-qa.fhpl.net/DMSDocuments/2026/2026-4/2026-4-14/26041406227-1/418c55b3-5fd9-4730-88e3-5be3451140e4_134206389613128707.pdf | Error: The request was aborted: Could not create SSL/TLS secure channel.
-
-
-https://spectra-app-qa.fhpl.net/DMSDocuments/2026/2026-4/2026-4-14/418c55b3-5fd9-4730-88e3-5be3451140e4_134206389613128707.pdf
-
+-- Also check what FilePath looks like for our working file
+SELECT TOP 10 FilePath, SystemFileName 
+FROM DMSFileinfo_Claims
+WHERE CreatedDatetime > '2026-04-09'
+AND Deleted = 0
+ORDER BY ID DESC
