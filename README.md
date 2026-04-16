@@ -13,3 +13,39 @@ JOIN sys.columns c ON c.object_id = tt.type_table_object_id
 JOIN sys.types t ON t.user_type_id = c.user_type_id
 WHERE tt.name LIKE '%Coding%'
 ORDER BY c.column_id
+
+TPAProcedureID	1	int
+TPALevel1	2	int
+TPALevel2	3	int
+TPALevel3	4	int
+PackageRate	5	money
+PackageRatio	6	decimal
+TreatementTypeID_19	7	int
+isGipsa	8	bit
+isDayCare	9	bit
+isCI	10	bit
+isPED	11	bit
+TypeOfAnesthesiaID	12	tinyint
+Exclusions	13	varchar
+SurgeryDate	14	datetime
+BillAmount	15	money
+DisallowedAmount	16	money
+DisallowedReasonIDs	17	varchar
+PayableAmount	18	money
+BufferAmount	19	money
+AdditionalreasonIDs	20	varchar
+Discount	21	money
+Copay	22	money
+Remarks	23	varchar
+ICDCode	24	int
+PCSCode	25	varchar
+PCSDescription	26	varchar
+EligibleAmount	27	money
+AdditionalAmount	28	money
+BPCoverageLimit	29	money
+ProcessHTML	30	varchar
+Overridepackage	31	bit
+Overridesuminsured	32	bit
+PolicySublimit	33	money
+AlimentExpression	34	int
+Alimentpower	35	decimal
