@@ -10,6 +10,7 @@ using log4net;
 using log4net.Config;
 using System.IO;
 using System.IO.Compression;
+using ClosedXML.Excel;
 using System.Text;
 using Newtonsoft.Json;
 using Resources;
@@ -7771,66 +7772,203 @@ namespace Enrollment.Controllers
 
         /// <summary>
         /// Picks the best tariff file from a list of (filename, lastModified, bytes) entries
-        /// using PSU/Private priority rules.
+        /// using PSU/Private priority rules with extended fallbacks.
+        /// Priority:
+        ///   PSU:     1) Insurer code/name  2) GIPSA (not SOC)  3) GIPSA SOC  4) All/Pvt Insurers
+        ///   Private: 1) Insurer code/name  2) All/Pvt Insurers
+        ///   Both:    5) FHPL Rate List  6) Filename contains Tariff  7) Any file
+        /// Returns null if no candidates.
         /// </summary>
         private byte[] PickBestTariffFile(
             System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>> candidates,
             bool isPsu, string insurerCode)
         {
             if (candidates == null || candidates.Count == 0) return null;
-            if (candidates.Count == 1) return candidates[0].Item3;
 
             var code = (insurerCode ?? "").ToLower();
 
-            // Priority tiers
-            System.Collections.Generic.List<System.Tuple<string,DateTime,byte[]>>[] tiers;
+            // Build priority tiers
+            var tiers = new System.Collections.Generic.List<
+                System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>>>();
 
             if (isPsu)
             {
-                tiers = new[]
-                {
-                    // P1: insurer-specific (code/shortname in filename)
-                    candidates.FindAll(f => !string.IsNullOrEmpty(code) &&
-                        code.Split(' ').Any(c2 => c2.Length > 1 && f.Item1.ToLower().Contains(c2))),
-                    // P2: GIPSA (not SOC)
-                    candidates.FindAll(f => f.Item1.ToLower().Contains("gipsa") &&
-                        !f.Item1.ToLower().Contains("soc")),
-                    // P3: GIPSA SOC
-                    candidates.FindAll(f => f.Item1.ToLower().Contains("gipsa") &&
-                        f.Item1.ToLower().Contains("soc")),
-                    // P4: All Insurers / Pvt Insurers / Private Insurers
-                    candidates.FindAll(f => f.Item1.ToLower().Contains("all insurer") ||
-                        f.Item1.ToLower().Contains("pvt insurer") ||
-                        f.Item1.ToLower().Contains("private insurer")),
-                };
+                // P1: insurer-specific
+                tiers.Add(candidates.FindAll(f => !string.IsNullOrEmpty(code) &&
+                    code.Split(new[]{' '}, StringSplitOptions.RemoveEmptyEntries)
+                        .Any(c2 => c2.Length > 1 && f.Item1.ToLower().Contains(c2))));
+                // P2: GIPSA (not SOC)
+                tiers.Add(candidates.FindAll(f => f.Item1.ToLower().Contains("gipsa") &&
+                    !f.Item1.ToLower().Contains("soc")));
+                // P3: GIPSA SOC
+                tiers.Add(candidates.FindAll(f => f.Item1.ToLower().Contains("gipsa") &&
+                    f.Item1.ToLower().Contains("soc")));
+                // P4: All Insurers / Pvt / Private
+                tiers.Add(candidates.FindAll(f => f.Item1.ToLower().Contains("all insurer") ||
+                    f.Item1.ToLower().Contains("pvt insurer") ||
+                    f.Item1.ToLower().Contains("private insurer")));
             }
             else
             {
-                tiers = new[]
-                {
-                    // P1: insurer-specific
-                    candidates.FindAll(f => !string.IsNullOrEmpty(code) &&
-                        code.Split(' ').Any(c2 => c2.Length > 1 && f.Item1.ToLower().Contains(c2))),
-                    // P2: All Insurers / Pvt Insurers / Private Insurers
-                    candidates.FindAll(f => f.Item1.ToLower().Contains("all insurer") ||
-                        f.Item1.ToLower().Contains("pvt insurer") ||
-                        f.Item1.ToLower().Contains("private insurer")),
-                };
+                // P1: insurer-specific
+                tiers.Add(candidates.FindAll(f => !string.IsNullOrEmpty(code) &&
+                    code.Split(new[]{' '}, StringSplitOptions.RemoveEmptyEntries)
+                        .Any(c2 => c2.Length > 1 && f.Item1.ToLower().Contains(c2))));
+                // P2: All Insurers / Pvt / Private
+                tiers.Add(candidates.FindAll(f => f.Item1.ToLower().Contains("all insurer") ||
+                    f.Item1.ToLower().Contains("pvt insurer") ||
+                    f.Item1.ToLower().Contains("private insurer")));
             }
 
-            // Pick from first non-empty tier → latest modified
+            // P_n: FHPL Rate List (fallback for all insurer types)
+            tiers.Add(candidates.FindAll(f =>
+            {
+                var n = f.Item1.ToLower();
+                return n.Contains("fhpl") || n.Contains("rate list") || n.Contains("ratelist");
+            }));
+
+            // P_n+1: filename contains "tariff"
+            tiers.Add(candidates.FindAll(f => f.Item1.ToLower().Contains("tariff")));
+
+            // P_last: any file
+            tiers.Add(new System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>>(candidates));
+
+            // Pick from first non-empty tier → latest modified → skip unreadable files
             foreach (var tier in tiers)
             {
-                if (tier != null && tier.Count > 0)
+                if (tier == null || tier.Count == 0) continue;
+                tier.Sort((a, b) => b.Item2.CompareTo(a.Item2)); // latest first
+                foreach (var candidate in tier)
                 {
-                    tier.Sort((a, b) => b.Item2.CompareTo(a.Item2)); // latest first
-                    return tier[0].Item3;
+                    byte[] converted = EnsurePdf(candidate.Item1, candidate.Item3);
+                    if (converted != null) return converted;
                 }
             }
 
-            // Fallback: latest modified from all candidates
-            candidates.Sort((a, b) => b.Item2.CompareTo(a.Item2));
-            return candidates[0].Item3;
+            return null;
+        }
+
+        /// <summary>
+        /// Ensures the file bytes are a valid PDF.
+        /// If the file is Excel (.xlsx/.xls), converts it to PDF using ClosedXML + iTextSharp.
+        /// Returns null if file cannot be read or converted.
+        /// </summary>
+        private byte[] EnsurePdf(string fileName, byte[] fileBytes)
+        {
+            if (fileBytes == null || fileBytes.Length == 0) return null;
+            var nameLower = (fileName ?? "").ToLower();
+
+            try
+            {
+                // Already a PDF — validate by checking header
+                if (nameLower.EndsWith(".pdf"))
+                {
+                    // Quick PDF header check
+                    if (fileBytes.Length > 4 &&
+                        fileBytes[0] == 0x25 && fileBytes[1] == 0x50 &&
+                        fileBytes[2] == 0x44 && fileBytes[3] == 0x46)
+                        return fileBytes;
+                    // Try reading with iTextSharp to validate
+                    var reader = new iTextSharp.text.pdf.PdfReader(fileBytes);
+                    reader.Close();
+                    return fileBytes;
+                }
+
+                // Excel file — convert to PDF
+                if (nameLower.EndsWith(".xlsx") || nameLower.EndsWith(".xls"))
+                {
+                    return ConvertExcelToPdf(fileBytes, nameLower.EndsWith(".xlsx"));
+                }
+
+                // Unknown type — try as PDF anyway
+                return fileBytes;
+            }
+            catch
+            {
+                return null; // unreadable — skip this file
+            }
+        }
+
+        /// <summary>
+        /// Converts an Excel file (xlsx/xls) to PDF using ClosedXML for data extraction
+        /// and iTextSharp for PDF generation.
+        /// </summary>
+        private byte[] ConvertExcelToPdf(byte[] excelBytes, bool isXlsx)
+        {
+            try
+            {
+                using (var excelStream = new System.IO.MemoryStream(excelBytes))
+                using (var pdfStream = new System.IO.MemoryStream())
+                {
+                    var workbook = new ClosedXML.Excel.XLWorkbook(excelStream);
+                    var document = new iTextSharp.text.Document(iTextSharp.text.PageSize.A4.Rotate());
+                    var writer   = iTextSharp.text.pdf.PdfWriter.GetInstance(document, pdfStream);
+                    document.Open();
+
+                    foreach (var worksheet in workbook.Worksheets)
+                    {
+                        if (worksheet.IsEmpty()) continue;
+
+                        // Add worksheet name as heading
+                        var titleFont = iTextSharp.text.FontFactory.GetFont(
+                            iTextSharp.text.FontFactory.HELVETICA_BOLD, 10);
+                        document.Add(new iTextSharp.text.Paragraph(worksheet.Name, titleFont));
+                        document.Add(new iTextSharp.text.Paragraph(" "));
+
+                        var usedRange = worksheet.RangeUsed();
+                        if (usedRange == null) continue;
+
+                        int colCount = usedRange.ColumnCount();
+                        int rowCount = usedRange.RowCount();
+
+                        var table = new iTextSharp.text.pdf.PdfPTable(colCount)
+                        {
+                            WidthPercentage = 100,
+                            SpacingBefore   = 5f
+                        };
+
+                        var cellFont = iTextSharp.text.FontFactory.GetFont(
+                            iTextSharp.text.FontFactory.HELVETICA, 7);
+                        var headerFont = iTextSharp.text.FontFactory.GetFont(
+                            iTextSharp.text.FontFactory.HELVETICA_BOLD, 7);
+
+                        for (int row = usedRange.FirstRow().RowNumber();
+                             row <= usedRange.LastRow().RowNumber(); row++)
+                        {
+                            bool isHeader = (row == usedRange.FirstRow().RowNumber());
+                            for (int col = usedRange.FirstColumn().ColumnNumber();
+                                 col <= usedRange.LastColumn().ColumnNumber(); col++)
+                            {
+                                var cell  = worksheet.Cell(row, col);
+                                string val = cell.IsEmpty() ? "" : cell.GetString();
+                                var pdfCell = new iTextSharp.text.pdf.PdfPCell(
+                                    new iTextSharp.text.Phrase(val, isHeader ? headerFont : cellFont))
+                                {
+                                    BackgroundColor = isHeader
+                                        ? new iTextSharp.text.BaseColor(211, 211, 211)
+                                        : iTextSharp.text.BaseColor.WHITE,
+                                    Padding   = 3f,
+                                    BorderWidth = 0.5f
+                                };
+                                table.AddCell(pdfCell);
+                            }
+                        }
+
+                        document.Add(table);
+                        if (worksheet != workbook.Worksheets.Last())
+                            document.NewPage();
+                    }
+
+                    document.Close();
+                    return pdfStream.ToArray();
+                }
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(
+                    new Exception("Excel to PDF conversion failed: " + ex.Message)));
+                return null;
+            }
         }
 
         /// <summary>
@@ -8088,10 +8226,12 @@ namespace Enrollment.Controllers
                     {
                         foreach (var entry in outerZip.Entries)
                         {
+                            if (string.IsNullOrEmpty(entry.Name)) continue; // skip folder entries
                             string entryName = entry.Name;
                             DateTime lastMod = entry.LastWriteTime.DateTime;
+                            var nameLow = entryName.ToLower();
 
-                            if (entryName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                            if (nameLow.EndsWith(".zip"))
                             {
                                 using (var stream = entry.Open())
                                 using (var ms = new System.IO.MemoryStream())
@@ -8100,8 +8240,11 @@ namespace Enrollment.Controllers
                                     innerZipCandidates.Add(System.Tuple.Create(entryName, lastMod, ms.ToArray()));
                                 }
                             }
-                            else if (entryName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                            else if (nameLow.EndsWith(".pdf") ||
+                                     nameLow.EndsWith(".xlsx") ||
+                                     nameLow.EndsWith(".xls"))
                             {
+                                // Include PDF and Excel files as tariff candidates
                                 using (var stream = entry.Open())
                                 using (var ms = new System.IO.MemoryStream())
                                 {
@@ -8125,7 +8268,11 @@ namespace Enrollment.Controllers
                         {
                             foreach (var entry in innerZip.Entries)
                             {
-                                if (!entry.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+                                if (string.IsNullOrEmpty(entry.Name)) continue;
+                                var innerNameLow = entry.Name.ToLower();
+                                if (!innerNameLow.EndsWith(".pdf") &&
+                                    !innerNameLow.EndsWith(".xlsx") &&
+                                    !innerNameLow.EndsWith(".xls")) continue;
                                 using (var stream = entry.Open())
                                 using (var ms2 = new System.IO.MemoryStream())
                                 {
