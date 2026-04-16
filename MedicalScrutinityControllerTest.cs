@@ -8978,8 +8978,7 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("PolicySublimit",      typeof(decimal));
                 dt.Columns.Add("AlimentExpression",   typeof(int));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
-                dt.Columns.Add("PackageType",         typeof(int));   // VM needs this; strips before SP call
-                dt.Columns.Add("SumInsuredCategoryID", typeof(int));   // 69 = Primary
+
 
                 // PackageRate = (EligibleAmount / PackageAmount) * 100
                 decimal pkgRate = (packageAmt > 0 && eligibleAmt > 0)
@@ -9022,8 +9021,6 @@ namespace Enrollment.Controllers
                 row["PolicySublimit"]     = DBNull.Value;
                 row["AlimentExpression"]  = DBNull.Value;
                 row["Alimentpower"]       = DBNull.Value;
-                row["PackageType"]        = pkgType > 0 ? (object)pkgType : DBNull.Value;
-                row["SumInsuredCategoryID"] = siCategory; // 69 = Primary
                 dt.Rows.Add(row);
 
                 // 5. Save — BillingType 202 = Package (Primary category)
