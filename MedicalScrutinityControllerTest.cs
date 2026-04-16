@@ -9,6 +9,7 @@ using System.Data;
 using log4net;
 using log4net.Config;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using Newtonsoft.Json;
 using Resources;
@@ -4612,6 +4613,7 @@ namespace Enrollment.Controllers
             //}
         }
 
+
         #endregion
 
         public string GetBSI(long MemberPolicyID, int SITypeID, long ClaimID, byte SlNo)
@@ -5524,6 +5526,7 @@ namespace Enrollment.Controllers
             }
         }
         //**************************************************************  
+
         #endregion
 
         #region RetainSIAmountsToReserved
@@ -5572,6 +5575,7 @@ namespace Enrollment.Controllers
             return JsonConvert.SerializeObject(objRes);
         }
         //**************************************************************  
+
         #endregion
 
         public string For_Repudiated_Insert(Int64 ClaimID, Int32 Slno, string Remarks)
@@ -5652,6 +5656,7 @@ namespace Enrollment.Controllers
             jsonResult.MaxJsonLength = int.MaxValue;
             return jsonResult;
         }
+
         #endregion
 
         public string GeneratingApprovalLetter(string ClaimDetails, bool isApprove, string PolicyType, string MainMemberPolicyID, string PolicyID, string ProviderID,
@@ -6384,6 +6389,7 @@ namespace Enrollment.Controllers
 
         }
 
+
         #endregion
 
         #region Bima Satark Details
@@ -6535,6 +6541,7 @@ namespace Enrollment.Controllers
             data.Columns.Add("txtradio3");
             return data;
         }
+
         #endregion
 
         [HttpPost]
@@ -7602,26 +7609,6 @@ namespace Enrollment.Controllers
         }
 
         /// <summary>
-        /// <summary>
-        /// Returns the tariff PDF from a local file path configured in Web.config
-        /// under the key "TariffDocumentPath".
-        ///
-        /// The file is read from disk, base64-encoded, and returned as JSON so the
-        /// browser can render it in ClaimAI without plugin or iframe restrictions.
-        ///
-        /// Web.config appSettings:
-        ///   TariffDocumentPath  — full local path to the tariff PDF file
-        ///                         e.g. C:\Tariffs\Apollo_Tariff.pdf
-        ///
-        /// GET /MedicalScrutiny/GetTariffDocument
-        /// </summary>
-        [HttpGet]
-        /// <summary>
-        /// POST /MedicalScrutiny/StartClaimAuditProxy
-        /// Bridge between Spectra (http) and Convex (https).
-        /// Receives base64 PDFs from browser, forwards to ClaimAI Next.js
-        /// /api/audit/start as multipart/form-data, returns jobId.
-        /// </summary>
         [HttpPost]
         public ActionResult StartClaimAuditProxy()
         {
@@ -7739,55 +7726,117 @@ namespace Enrollment.Controllers
             }
         }
 
+        #region ClaimAI Document Helpers
+
         /// <summary>
-        /// Returns tariff PDF from local file (Web.config: TariffDocumentPath).
-        /// All environments use local file for tariff.
+        /// PSU insurer IDs: 5=UIIC, 6=NIC, 7=OIC, 8=NIAC
         /// </summary>
-        public ActionResult GetTariffDocument(string claimId = null, string slNo = null)
+        private static readonly System.Collections.Generic.HashSet<int> PsuInsurerIds =
+            new System.Collections.Generic.HashSet<int> { 5, 6, 7, 8 };
+
+        /// <summary>
+        /// Gets insurer ID and shortname for a claim from DB.
+        /// </summary>
+        private void GetClaimInsurerInfo(long claimId, string connStr,
+            out int insurerIdOut, out string insurerCodeOut)
         {
-            var res = new ApiResponse<object>();
+            insurerIdOut   = 0;
+            insurerCodeOut = "";
             try
             {
-                if (Session[SessionValue.UserRegionID] == null)
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
-                    res.Success = false; res.ErrorCode = "ErrorCode#1";
-                    res.Message = "Session expired.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT ia.ID, ia.Code, ia.ShortName
+                        FROM Claims c WITH(NOLOCK)
+                        JOIN Mst_IssuingAuthority ia WITH(NOLOCK) ON ia.ID = c.InsuranceCompanyID
+                        WHERE c.ID = @cid AND ISNULL(c.Deleted,0)=0";
+                    cmd.Parameters.AddWithValue("@cid", claimId);
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        if (rdr.Read())
+                        {
+                            insurerIdOut   = rdr["ID"] != DBNull.Value ? Convert.ToInt32(rdr["ID"]) : 0;
+                            insurerCodeOut = (rdr["Code"] != DBNull.Value ? rdr["Code"].ToString().Trim() : "")
+                                + " " +
+                                (rdr["ShortName"] != DBNull.Value ? rdr["ShortName"].ToString().Trim() : "");
+                        }
+                    }
                 }
-                string filePath = System.Configuration.ConfigurationManager
-                                        .AppSettings["TariffDocumentPath"];
-                if (string.IsNullOrWhiteSpace(filePath))
-                {
-                    res.Success = false;
-                    res.Message = "TariffDocumentPath is not configured in Web.config.";
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-                if (!System.IO.File.Exists(filePath))
-                {
-                    res.Success = false;
-                    res.Message = "Tariff file not found at: " + filePath;
-                    return Json(res, JsonRequestBehavior.AllowGet);
-                }
-                byte[] bytes = System.IO.File.ReadAllBytes(filePath);
-                res.Success  = true;
-                res.Message  = "Tariff document loaded.";
-                res.Data     = new { fileName = System.IO.Path.GetFileName(filePath), base64Content = Convert.ToBase64String(bytes) };
-                var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                return Content(s.Serialize(res), "application/json");
             }
-            catch (Exception ex)
-            {
-                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
-                res.Success = false;
-                res.Message = "Error loading tariff: " + ex.Message;
-                return Json(res, JsonRequestBehavior.AllowGet);
-            }
+            catch { /* return defaults */ }
         }
+
+        /// <summary>
+        /// Picks the best tariff file from a list of (filename, lastModified, bytes) entries
+        /// using PSU/Private priority rules.
+        /// </summary>
+        private byte[] PickBestTariffFile(
+            System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>> candidates,
+            bool isPsu, string insurerCode)
+        {
+            if (candidates == null || candidates.Count == 0) return null;
+            if (candidates.Count == 1) return candidates[0].Item3;
+
+            var code = (insurerCode ?? "").ToLower();
+
+            // Priority tiers
+            System.Collections.Generic.List<System.Tuple<string,DateTime,byte[]>>[] tiers;
+
+            if (isPsu)
+            {
+                tiers = new[]
+                {
+                    // P1: insurer-specific (code/shortname in filename)
+                    candidates.FindAll(f => !string.IsNullOrEmpty(code) &&
+                        code.Split(' ').Any(c2 => c2.Length > 1 && f.Item1.ToLower().Contains(c2))),
+                    // P2: GIPSA (not SOC)
+                    candidates.FindAll(f => f.Item1.ToLower().Contains("gipsa") &&
+                        !f.Item1.ToLower().Contains("soc")),
+                    // P3: GIPSA SOC
+                    candidates.FindAll(f => f.Item1.ToLower().Contains("gipsa") &&
+                        f.Item1.ToLower().Contains("soc")),
+                    // P4: All Insurers / Pvt Insurers / Private Insurers
+                    candidates.FindAll(f => f.Item1.ToLower().Contains("all insurer") ||
+                        f.Item1.ToLower().Contains("pvt insurer") ||
+                        f.Item1.ToLower().Contains("private insurer")),
+                };
+            }
+            else
+            {
+                tiers = new[]
+                {
+                    // P1: insurer-specific
+                    candidates.FindAll(f => !string.IsNullOrEmpty(code) &&
+                        code.Split(' ').Any(c2 => c2.Length > 1 && f.Item1.ToLower().Contains(c2))),
+                    // P2: All Insurers / Pvt Insurers / Private Insurers
+                    candidates.FindAll(f => f.Item1.ToLower().Contains("all insurer") ||
+                        f.Item1.ToLower().Contains("pvt insurer") ||
+                        f.Item1.ToLower().Contains("private insurer")),
+                };
+            }
+
+            // Pick from first non-empty tier → latest modified
+            foreach (var tier in tiers)
+            {
+                if (tier != null && tier.Count > 0)
+                {
+                    tier.Sort((a, b) => b.Item2.CompareTo(a.Item2)); // latest first
+                    return tier[0].Item3;
+                }
+            }
+
+            // Fallback: latest modified from all candidates
+            candidates.Sort((a, b) => b.Item2.CompareTo(a.Item2));
+            return candidates[0].Item3;
+        }
+
         /// <summary>
         /// Fetches medical bill PDF.
-        /// Prod/Preprod/Live : DMS API → pre-signed S3 URLs → merge all PDFs.
-        /// Dev/QA/UAT        : WebShare HTTP (DMSWebShareBaseUrl) → DMSFileinfo_Claims → merge.
-        /// Tariff             : always local file (TariffDocumentPath in Web.config).
+        /// Prod/Preprod/Live : DMS API → pre-signed S3 URLs → merge.
+        /// Dev/QA/UAT        : ClaimAIDocs/{claimId}/medicalbill.zip → extract all PDFs (deduplicated) → merge.
         /// </summary>
         public ActionResult GetMedicalBillDocument(string claimId = null, string slNo = null)
         {
@@ -7816,95 +7865,65 @@ namespace Enrollment.Controllers
 
                 if (!isProdOrPreprod)
                 {
-                    // ── Dev/QA/UAT: WebShare HTTP from DMSFileinfo_Claims ─────────────
-                    string webShareBase = (System.Configuration.ConfigurationManager.AppSettings["DMSWebShareBaseUrl"] ?? "").TrimEnd('/');
-                    string dmsDirectories = System.Configuration.ConfigurationManager.AppSettings["DMSDirectoryName"] ?? "E://,D://,C://";
+                    // ── Local: ClaimAIDocs/{claimId}/medicalbill.zip ──────────────────
+                    string localBase = Server.MapPath("~/ClaimAIDocs/");
+                    string zipPath   = System.IO.Path.Combine(localBase, cId, "medicalbill.zip");
 
-                    string connStr = System.Configuration.ConfigurationManager
-                        .ConnectionStrings["McarePlusEntities"].ConnectionString;
-                    if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var m = System.Text.RegularExpressions.Regex.Match(
-                            connStr, "provider connection string=\"([^\"]+)\"",
-                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                        if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
-                    }
-
-                    var dbFiles = new System.Collections.Generic.List<System.Tuple<string, string>>();
-                    using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                    {
-                        conn.Open();
-                        var cmd = conn.CreateCommand();
-                        cmd.CommandText =
-                            "SELECT SystemFileName, FilePath FROM DMSFileinfo_Claims " +
-                            "WHERE FilePath LIKE @pattern AND ISNULL(Deleted,0)=0 AND FileType='.pdf' ORDER BY ID";
-                        cmd.Parameters.AddWithValue("@pattern", "%" + cId + "-" + sNo + "/");
-                        using (var rdr = cmd.ExecuteReader())
-                        {
-                            while (rdr.Read())
-                                dbFiles.Add(System.Tuple.Create(
-                                    rdr["FilePath"].ToString().Trim(),
-                                    rdr["SystemFileName"].ToString().Trim()));
-                        }
-                    }
-
-                    if (dbFiles.Count == 0)
+                    if (!System.IO.File.Exists(zipPath))
                     {
                         res.Success = false;
-                        res.Message = "No documents found in DB for claimId=" + cId + " slNo=" + sNo;
+                        res.Message = "Medical bill zip not found at: " + zipPath;
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
-                    // Log DB values for debugging
-                    var dbDebug = string.Join(" | ", dbFiles.Select(f => "FilePath=" + f.Item1 + " SysName=" + f.Item2).ToArray());
-                    res.Message = "DB files: " + dbDebug + " | webShareBase=" + webShareBase;
-
-                    // Build WebShare URLs and download
+                    // Extract all PDFs, deduplicate by content hash (MD5)
+                    // Handles same content in different filenames
                     var pdfBytesList = new System.Collections.Generic.List<byte[]>();
-                    foreach (var entry in dbFiles)
+                    var seenHashes   = new System.Collections.Generic.HashSet<string>();
+
+                    using (var zip = System.IO.Compression.ZipFile.OpenRead(zipPath))
                     {
-                        string filePath   = entry.Item1;
-                        string sysName    = entry.Item2;
-
-                        // Strip drive prefix: D://DMSDocuments/... → DMSDocuments/...
-                        string relativePath = filePath;
-                        foreach (var drive in dmsDirectories.Split(','))
-                            relativePath = relativePath.Replace(drive.Trim(), "");
-                        relativePath = relativePath.TrimStart('/').TrimStart('\').Replace('\', '/');
-
-                        string fileUrl = webShareBase + "/" + relativePath.TrimEnd('/') + "/" + sysName;
-                        try
+                        foreach (var entry in zip.Entries)
                         {
-                            using (var wc = new System.Net.WebClient())
+                            if (!entry.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+                            using (var stream = entry.Open())
+                            using (var ms = new System.IO.MemoryStream())
                             {
-                                wc.UseDefaultCredentials = true; // Windows Auth
-                                pdfBytesList.Add(wc.DownloadData(fileUrl));
+                                stream.CopyTo(ms);
+                                byte[] pdfBytes = ms.ToArray();
+
+                                // Compute MD5 hash of file content
+                                string hash;
+                                using (var md5 = System.Security.Cryptography.MD5.Create())
+                                    hash = BitConverter.ToString(md5.ComputeHash(pdfBytes)).Replace("-", "");
+
+                                if (!seenHashes.Add(hash)) continue; // skip duplicate content
+                                pdfBytesList.Add(pdfBytes);
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            // Include URL in error message for debugging
-                            string errDetail = "WebShare download failed. URL tried: " + fileUrl + " | Error: " + ex.Message;
-                            Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(new Exception(errDetail)));
-                            // Surface error in response for easier debugging
-                            if (pdfBytesList.Count == 0)
-                                res.Message = errDetail;
                         }
                     }
 
                     if (pdfBytesList.Count == 0)
                     {
                         res.Success = false;
-                        if (string.IsNullOrWhiteSpace(res.Message))
-                            res.Message = "Found " + dbFiles.Count + " docs in DB but none downloaded from WebShare. Check DMSWebShareBaseUrl config.";
+                        res.Message = "No PDFs found in medicalbill.zip for claimId=" + cId;
                         return Json(res, JsonRequestBehavior.AllowGet);
                     }
 
-                    byte[] mergedLocal = MergePdfs(pdfBytesList);
-                    string fileNameLocal = cId + "-" + sNo + "-medical-bill.pdf";
+                    // Merge and compress — if still over 4MB, reduce page cap until it fits
+                    byte[] mergedLocal   = MergePdfs(pdfBytesList);
+                    byte[] compressedLocal = CompressPdf(mergedLocal);
+                    int pageCap = 25;
+                    while (compressedLocal.Length > 4 * 1024 * 1024 && pageCap > 5)
+                    {
+                        pageCap -= 5;
+                        mergedLocal    = MergePdfsWithCap(pdfBytesList, pageCap);
+                        compressedLocal = CompressPdf(mergedLocal);
+                    }
+                    double sizeMb = Math.Round(compressedLocal.Length / 1048576.0, 2);
                     res.Success = true;
-                    res.Message = "Medical bill loaded from WebShare. Files: " + pdfBytesList.Count;
-                    res.Data    = new { fileName = fileNameLocal, base64Content = Convert.ToBase64String(mergedLocal) };
+                    res.Message = "Medical bill loaded from zip. Files: " + pdfBytesList.Count + " | Pages capped: " + pageCap + " | Size: " + sizeMb + "MB";
+                    res.Data    = new { fileName = cId + "-medicalbill.pdf", base64Content = Convert.ToBase64String(compressedLocal) };
                     var sl = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                     return Content(sl.Serialize(res), "application/json");
                 }
@@ -7921,15 +7940,13 @@ namespace Enrollment.Controllers
                 System.Net.ServicePointManager.ServerCertificateValidationCallback =
                     (sender, cert, chain, errors) => true;
 
-                // Step 1: Generate token
                 string token = "";
                 {
                     var client  = new System.Net.Http.HttpClient();
                     client.Timeout = TimeSpan.FromSeconds(30);
                     var jsonDoc = Newtonsoft.Json.JsonConvert.SerializeObject(new { clientId, apiKey });
                     var request = new System.Net.Http.HttpRequestMessage(
-                        System.Net.Http.HttpMethod.Post,
-                        dmsBaseUrl + "/api/Auth/generatetoken");
+                        System.Net.Http.HttpMethod.Post, dmsBaseUrl + "/api/Auth/generatetoken");
                     request.Content = new System.Net.Http.StringContent(jsonDoc, null, "application/json");
                     var response = client.SendAsync(request).GetAwaiter().GetResult();
                     if (response.IsSuccessStatusCode)
@@ -7943,7 +7960,6 @@ namespace Enrollment.Controllers
                     return Json(res, JsonRequestBehavior.AllowGet);
                 }
 
-                // Step 2: Get document URLs
                 string docsJson = "";
                 {
                     var client = new System.Net.Http.HttpClient();
@@ -7992,10 +8008,9 @@ namespace Enrollment.Controllers
                 }
 
                 byte[] mergedProd = MergePdfs(pdfBytesListProd);
-                string fileNameProd = cId + "-" + sNo + "-medical-bill.pdf";
                 res.Success = true;
                 res.Message = "Medical bill loaded from DMS. Files: " + pdfBytesListProd.Count;
-                res.Data    = new { fileName = fileNameProd, base64Content = Convert.ToBase64String(mergedProd) };
+                res.Data    = new { fileName = cId + "-" + sNo + "-medical-bill.pdf", base64Content = Convert.ToBase64String(mergedProd) };
                 var s = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
                 return Content(s.Serialize(res), "application/json");
             }
@@ -8008,7 +8023,351 @@ namespace Enrollment.Controllers
             }
         }
 
-        /// <summary>Helper: merge list of PDF byte arrays into one using iTextSharp.</summary>
+        /// <summary>
+        /// Fetches tariff PDF.
+        /// Dev/QA/UAT        : ClaimAIDocs/{claimId}/tariff.zip
+        ///                     → find best inner zip by rules → extract best PDF by rules.
+        /// Prod/Preprod/Live : S3 {providerId}/TariffDocs/ → list files → pick by rules.
+        /// Rules: PSU(5,6,7,8) priority: insurer-specific → GIPSA → GIPSA SOC → All Insurers
+        ///        Private priority: insurer-specific → All Insurers/Pvt Insurers
+        /// </summary>
+        public ActionResult GetTariffDocument(string claimId = null, string slNo = null)
+        {
+            var res = new ApiResponse<object>();
+            try
+            {
+                if (Session[SessionValue.UserRegionID] == null)
+                {
+                    res.Success = false; res.ErrorCode = "ErrorCode#1";
+                    res.Message = "Session expired.";
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                string cId = (claimId ?? "").Trim();
+
+                // Get insurer info from DB
+                string connStr = System.Configuration.ConfigurationManager
+                    .ConnectionStrings["McarePlusEntities"].ConnectionString;
+                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        connStr, "provider connection string=\\\"([^\\\"]+)\\\"",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
+                }
+
+                int insurerId = 0;
+                string insurerCode = "";
+                if (!string.IsNullOrWhiteSpace(cId) && long.TryParse(cId, out long cIdLong))
+                    GetClaimInsurerInfo(cIdLong, connStr, out insurerId, out insurerCode);
+
+                bool isPsu = PsuInsurerIds.Contains(insurerId);
+
+                string env = (System.Configuration.ConfigurationManager.AppSettings["Enviroment"] ?? "dev").ToLower().Trim();
+                bool isProdOrPreprod = env == "prod" || env == "preprod" || env == "live";
+
+                if (!isProdOrPreprod)
+                {
+                    // ── Local: ClaimAIDocs/{claimId}/tariff.zip ───────────────────────
+                    string localBase = Server.MapPath("~/ClaimAIDocs/");
+                    string zipPath   = System.IO.Path.Combine(localBase, cId, "tariff.zip");
+
+                    if (!System.IO.File.Exists(zipPath))
+                    {
+                        res.Success = false;
+                        res.Message = "Tariff zip not found at: " + zipPath +
+                            ". Create folder ClaimAIDocs/" + cId + "/ and place tariff.zip inside it.";
+                        return Json(res, JsonRequestBehavior.AllowGet);
+                    }
+
+                    // Step 1: Find best inner zip by rules
+                    var innerZipCandidates = new System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>>();
+                    var pdfCandidates      = new System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>>();
+
+                    using (var outerZip = System.IO.Compression.ZipFile.OpenRead(zipPath))
+                    {
+                        foreach (var entry in outerZip.Entries)
+                        {
+                            string entryName = entry.Name;
+                            DateTime lastMod = entry.LastWriteTime.DateTime;
+
+                            if (entryName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                            {
+                                using (var stream = entry.Open())
+                                using (var ms = new System.IO.MemoryStream())
+                                {
+                                    stream.CopyTo(ms);
+                                    innerZipCandidates.Add(System.Tuple.Create(entryName, lastMod, ms.ToArray()));
+                                }
+                            }
+                            else if (entryName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                            {
+                                using (var stream = entry.Open())
+                                using (var ms = new System.IO.MemoryStream())
+                                {
+                                    stream.CopyTo(ms);
+                                    pdfCandidates.Add(System.Tuple.Create(entryName, lastMod, ms.ToArray()));
+                                }
+                            }
+                        }
+                    }
+
+                    byte[] tariffBytes = null;
+
+                    if (innerZipCandidates.Count > 0)
+                    {
+                        // Pick best inner zip by rules
+                        byte[] bestZipBytes = PickBestTariffFile(innerZipCandidates, isPsu, insurerCode);
+                        // Extract best PDF from that inner zip
+                        var innerPdfCandidates = new System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>>();
+                        using (var innerMs = new System.IO.MemoryStream(bestZipBytes))
+                        using (var innerZip = new System.IO.Compression.ZipArchive(innerMs, System.IO.Compression.ZipArchiveMode.Read))
+                        {
+                            foreach (var entry in innerZip.Entries)
+                            {
+                                if (!entry.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+                                using (var stream = entry.Open())
+                                using (var ms2 = new System.IO.MemoryStream())
+                                {
+                                    stream.CopyTo(ms2);
+                                    innerPdfCandidates.Add(System.Tuple.Create(entry.Name, entry.LastWriteTime.DateTime, ms2.ToArray()));
+                                }
+                            }
+                        }
+                        tariffBytes = PickBestTariffFile(innerPdfCandidates, isPsu, insurerCode);
+                    }
+                    else if (pdfCandidates.Count > 0)
+                    {
+                        // No inner zips — pick best PDF directly
+                        tariffBytes = PickBestTariffFile(pdfCandidates, isPsu, insurerCode);
+                    }
+
+                    if (tariffBytes == null)
+                    {
+                        res.Success = false;
+                        res.Message = "Could not pick tariff file from zip. InsurerID=" + insurerId + " Code=" + insurerCode;
+                        return Json(res, JsonRequestBehavior.AllowGet);
+                    }
+
+                    res.Success = true;
+                    res.Message = "Tariff loaded from zip. IsPSU=" + isPsu + " InsurerCode=" + insurerCode;
+                    res.Data    = new { fileName = cId + "-tariff.pdf", base64Content = Convert.ToBase64String(tariffBytes) };
+                    var sl2 = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                    return Content(sl2.Serialize(res), "application/json");
+                }
+
+                // ── Prod/Preprod/Live: S3 via Usp_TariffUploadDoc_FillDetails ─────────
+                long claimIdLong2 = 0;
+                long.TryParse(cId, out claimIdLong2);
+
+                int slNoInt = 1;
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText = "SELECT TOP 1 Slno FROM Claimsdetails WHERE ClaimID=@cid AND ISNULL(Deleted,0)=0 ORDER BY Slno";
+                    cmd.Parameters.AddWithValue("@cid", claimIdLong2);
+                    var val = cmd.ExecuteScalar();
+                    if (val != null && val != DBNull.Value) slNoInt = Convert.ToInt32(val);
+                }
+
+                long providerId = 0;
+                string mouId = "";
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd.CommandText = "USP_ClaimMedicalScrutiny_Retrieve";
+                    cmd.Parameters.AddWithValue("@ClaimID", claimIdLong2);
+                    cmd.Parameters.AddWithValue("@SlNo",    slNoInt);
+                    cmd.Parameters.AddWithValue("@IsFrmArchived", 0);
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        if (rdr.Read())
+                        {
+                            if (!rdr.IsDBNull(rdr.GetOrdinal("ProviderID")))
+                                providerId = Convert.ToInt64(rdr["ProviderID"]);
+                            if (!rdr.IsDBNull(rdr.GetOrdinal("MOUID")))
+                                mouId = rdr["MOUID"].ToString();
+                        }
+                    }
+                }
+
+                if (providerId == 0)
+                {
+                    res.Success = false;
+                    res.Message = "ProviderID not found for claimId=" + cId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Get all tariff files from S3 for this provider
+                string s3Bucket  = System.Configuration.ConfigurationManager.AppSettings["ProviderDocbucketname"] ?? "prod-spectra-app-s3-provider-docs";
+                string docPath   = System.Configuration.ConfigurationManager.AppSettings["ProviderTariffDocumentPath"] ?? "TariffDocs/";
+                string webShare2 = System.Configuration.ConfigurationManager.AppSettings["ProviderTariffDocumentPathWebShare"] ?? "TariffDocs/";
+                string accessKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocaccesskey"];
+                string secretKey = System.Configuration.ConfigurationManager.AppSettings["ProviderDocsecretkey"];
+
+                // List all tariff files for this provider from Usp_TariffUploadDoc_FillDetails
+                var tariffFiles = new System.Collections.Generic.List<System.Tuple<string, DateTime, string, string>>();
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd.CommandText = "Usp_TariffUploadDoc_FillDetails";
+                    cmd.Parameters.AddWithValue("@ProviderID", providerId);
+                    cmd.Parameters.AddWithValue("@MOUID",      mouId);
+                    cmd.Parameters.AddWithValue("@Flag",        0);
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            string fileType = rdr.IsDBNull(rdr.GetOrdinal("FileType")) ? "" : rdr["FileType"].ToString().ToLower();
+                            if (!fileType.Contains("pdf")) continue;
+                            string sysFileName = rdr["SystemFileName"].ToString();
+                            string isOldDoc    = rdr.IsDBNull(rdr.GetOrdinal("isOldDoc")) ? "no" : rdr["isOldDoc"].ToString().ToLower();
+                            DateTime updateDate = rdr.IsDBNull(rdr.GetOrdinal("UpdateDate")) ? DateTime.MinValue : Convert.ToDateTime(rdr["UpdateDate"]);
+                            tariffFiles.Add(System.Tuple.Create(sysFileName, updateDate, isOldDoc, sysFileName));
+                        }
+                    }
+                }
+
+                if (tariffFiles.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "No tariff files found for providerId=" + providerId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                // Download all tariff PDFs from S3 and pick best by rules
+                var s3Creds  = new Amazon.Runtime.BasicAWSCredentials(accessKey, secretKey);
+                var s3Region = Amazon.RegionEndpoint.APSouth1;
+                var s3TariffCandidates = new System.Collections.Generic.List<System.Tuple<string, DateTime, byte[]>>();
+
+                using (var s3Client = new Amazon.S3.AmazonS3Client(s3Creds, s3Region))
+                {
+                    foreach (var tf in tariffFiles)
+                    {
+                        string sysName  = tf.Item1;
+                        DateTime modDate = tf.Item2;
+                        string isOldDoc = tf.Item3;
+                        string s3Key    = isOldDoc == "yes"
+                            ? webShare2 + sysName
+                            : providerId.ToString() + "/" + docPath + sysName;
+                        try
+                        {
+                            var request = new Amazon.S3.Model.GetPreSignedUrlRequest
+                            {
+                                BucketName = s3Bucket, Key = s3Key,
+                                Expires    = DateTime.Now.AddMinutes(15)
+                            };
+                            string presignedUrl = s3Client.GetPreSignedURL(request);
+                            using (var wc = new System.Net.WebClient())
+                            {
+                                byte[] pdfBytes = wc.DownloadData(presignedUrl);
+                                s3TariffCandidates.Add(System.Tuple.Create(sysName, modDate, pdfBytes));
+                            }
+                        }
+                        catch { /* skip failed */ }
+                    }
+                }
+
+                if (s3TariffCandidates.Count == 0)
+                {
+                    res.Success = false;
+                    res.Message = "Could not download any tariff files from S3 for providerId=" + providerId;
+                    return Json(res, JsonRequestBehavior.AllowGet);
+                }
+
+                byte[] bestTariff = PickBestTariffFile(s3TariffCandidates, isPsu, insurerCode);
+                res.Success = true;
+                res.Message = "Tariff loaded from S3. IsPSU=" + isPsu + " InsurerCode=" + insurerCode + " Files=" + s3TariffCandidates.Count;
+                res.Data    = new { fileName = providerId + "-tariff.pdf", base64Content = Convert.ToBase64String(bestTariff) };
+                var s3 = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+                return Content(s3.Serialize(res), "application/json");
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
+                res.Success = false;
+                res.Message = "Error loading tariff: " + ex.Message;
+                return Json(res, JsonRequestBehavior.AllowGet);
+            }
+        }
+
+        /// <summary>
+        /// Compresses a PDF by re-writing it through iTextSharp PdfCopy with compression enabled.
+        /// Reduces file size for large scanned PDFs before sending to Convex.
+        /// </summary>
+        private byte[] CompressPdf(byte[] pdfBytes)
+        {
+            try
+            {
+                using (var input  = new System.IO.MemoryStream(pdfBytes))
+                using (var output = new System.IO.MemoryStream())
+                {
+                    var reader   = new iTextSharp.text.pdf.PdfReader(input);
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, output)
+                    {
+                        CompressionLevel = iTextSharp.text.pdf.PdfStream.BEST_COMPRESSION
+                    };
+                    writer.SetFullCompression();
+                    document.Open();
+                    for (int p = 1; p <= reader.NumberOfPages; p++)
+                        writer.AddPage(writer.GetImportedPage(reader, p));
+                    document.Close();
+                    reader.Close();
+                    byte[] compressed = output.ToArray();
+                    // Only use compressed if it's actually smaller
+                    return compressed.Length < pdfBytes.Length ? compressed : pdfBytes;
+                }
+            }
+            catch { return pdfBytes; }
+        }
+
+        #endregion
+
+
+        /// <summary>Helper: merge with explicit page cap.</summary>
+        private byte[] MergePdfsWithCap(System.Collections.Generic.List<byte[]> pdfList, int maxPages)
+        {
+            try
+            {
+                using (var ms = new System.IO.MemoryStream())
+                {
+                    var document = new iTextSharp.text.Document();
+                    var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
+                    document.Open();
+                    var seenPageHashes = new System.Collections.Generic.HashSet<string>();
+                    int totalPages = 0;
+                    foreach (var pdfBytes in pdfList)
+                    {
+                        if (totalPages >= maxPages) break;
+                        var reader = new iTextSharp.text.pdf.PdfReader(pdfBytes);
+                        for (int p = 1; p <= reader.NumberOfPages; p++)
+                        {
+                            if (totalPages >= maxPages) break;
+                            byte[] pageBytes = reader.GetPageContent(p);
+                            string pageHash;
+                            using (var md5 = System.Security.Cryptography.MD5.Create())
+                                pageHash = BitConverter.ToString(md5.ComputeHash(pageBytes ?? new byte[0])).Replace("-", "");
+                            if (!seenPageHashes.Add(pageHash)) continue;
+                            writer.AddPage(writer.GetImportedPage(reader, p));
+                            totalPages++;
+                        }
+                        reader.Close();
+                    }
+                    document.Close();
+                    return ms.ToArray();
+                }
+            }
+            catch { return pdfList[0]; }
+        }
+
+        /// <summary>Helper: merge list of PDF byte arrays into one using iTextSharp.
+        /// Deduplicates at page level using MD5 hash of each page content.</summary>
         private byte[] MergePdfs(System.Collections.Generic.List<byte[]> pdfList)
         {
             if (pdfList.Count == 1) return pdfList[0];
@@ -8019,11 +8378,28 @@ namespace Enrollment.Controllers
                     var document = new iTextSharp.text.Document();
                     var writer   = new iTextSharp.text.pdf.PdfCopy(document, ms);
                     document.Open();
+                    var seenPageHashes = new System.Collections.Generic.HashSet<string>();
+                    int totalPages = 0;
+                    const int maxPages = 25; // cap at 25 pages to keep PDF under ~3MB for Convex
+
                     foreach (var pdfBytes in pdfList)
                     {
+                        if (totalPages >= maxPages) break;
                         var reader = new iTextSharp.text.pdf.PdfReader(pdfBytes);
                         for (int p = 1; p <= reader.NumberOfPages; p++)
+                        {
+                            if (totalPages >= maxPages) break;
+
+                            // Hash raw page content stream to detect duplicate pages
+                            byte[] pageBytes = reader.GetPageContent(p);
+                            string pageHash;
+                            using (var md5 = System.Security.Cryptography.MD5.Create())
+                                pageHash = BitConverter.ToString(md5.ComputeHash(pageBytes ?? new byte[0])).Replace("-", "");
+
+                            if (!seenPageHashes.Add(pageHash)) continue; // skip duplicate page
                             writer.AddPage(writer.GetImportedPage(reader, p));
+                            totalPages++;
+                        }
                         reader.Close();
                     }
                     document.Close();
@@ -8456,6 +8832,7 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("AlimentExpression",   typeof(int));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
                 dt.Columns.Add("PackageType",         typeof(int));   // VM needs this; strips before SP call
+                dt.Columns.Add("SumInsuredCategoryID", typeof(int));   // 69 = Primary
 
                 // PackageRate = (EligibleAmount / PackageAmount) * 100
                 decimal pkgRate = (packageAmt > 0 && eligibleAmt > 0)
@@ -8499,6 +8876,7 @@ namespace Enrollment.Controllers
                 row["AlimentExpression"]  = DBNull.Value;
                 row["Alimentpower"]       = DBNull.Value;
                 row["PackageType"]        = pkgType > 0 ? (object)pkgType : DBNull.Value;
+                row["SumInsuredCategoryID"] = siCategory; // 69 = Primary
                 dt.Rows.Add(row);
 
                 // 5. Save — BillingType 202 = Package (Primary category)
