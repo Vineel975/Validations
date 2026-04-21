@@ -7692,41 +7692,82 @@ namespace Enrollment.Controllers
                 //   c) Wrong URL in Web.config ClaimAIUrl key
                 //   d) SSL certificate issue → check nginx SSL config on ClaimAI EC2
                 // Error message will contain the exact network exception
-                string boundary = "----ClaimAIBoundary" + Guid.NewGuid().ToString("N");
+                // Build multipart body manually to ensure correct Content-Type boundary format
+                // .NET MultipartFormDataContent quotes the boundary which breaks Next.js formData() parsing
+                string boundary = "ClaimAIBoundary" + Guid.NewGuid().ToString("N");
+                byte[] multipartBody;
+                using (var ms = new System.IO.MemoryStream())
+                {
+                    var enc  = System.Text.Encoding.UTF8;
+                    string crlf = "
+";
+
+                    // Helper to write text line
+                    Action<string> writeLine = (s) => {
+                        var b = enc.GetBytes(s + crlf);
+                        ms.Write(b, 0, b.Length);
+                    };
+
+                    // Helper to write bytes
+                    Action<byte[]> writeBytes = (b) => ms.Write(b, 0, b.Length);
+
+                    // Field: claimId
+                    writeLine("--" + boundary);
+                    writeLine("Content-Disposition: form-data; name="claimId"");
+                    writeLine("");
+                    writeLine(claimId);
+
+                    // Field: medicalBill (PDF)
+                    writeLine("--" + boundary);
+                    writeLine("Content-Disposition: form-data; name="medicalBill"; filename="" + hospitalFileName + """);
+                    writeLine("Content-Type: application/pdf");
+                    writeLine("");
+                    writeBytes(medBytes);
+                    writeLine("");
+
+                    // Field: tariffBill (optional PDF)
+                    if (tarBytes != null && !string.IsNullOrWhiteSpace(tariffFileName))
+                    {
+                        writeLine("--" + boundary);
+                        writeLine("Content-Disposition: form-data; name="tariffBill"; filename="" + tariffFileName + """);
+                        writeLine("Content-Type: application/pdf");
+                        writeLine("");
+                        writeBytes(tarBytes);
+                        writeLine("");
+                    }
+
+                    // Field: spectraFields (optional JSON string)
+                    if (!string.IsNullOrWhiteSpace(spectraFieldsJson))
+                    {
+                        writeLine("--" + boundary);
+                        writeLine("Content-Disposition: form-data; name="spectraFields"");
+                        writeLine("");
+                        writeLine(spectraFieldsJson);
+                    }
+
+                    // Final boundary
+                    var finalBoundary = enc.GetBytes("--" + boundary + "--" + crlf);
+                    ms.Write(finalBoundary, 0, finalBoundary.Length);
+                    multipartBody = ms.ToArray();
+                }
+
                 using (var client = new System.Net.Http.HttpClient())
                 {
                     client.Timeout = TimeSpan.FromMinutes(3);
-                    var form = new System.Net.Http.MultipartFormDataContent(boundary);
 
-                    // Explicitly set Content-Type with boundary so Next.js recognises multipart
-                    form.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/form-data");
-                    form.Headers.ContentType.Parameters.Add(
-                        new System.Net.Http.Headers.NameValueHeaderValue("boundary", boundary));
-
-                    form.Add(new System.Net.Http.StringContent(claimId), "claimId");
-
-                    var medContent = new System.Net.Http.ByteArrayContent(medBytes);
-                    medContent.Headers.ContentType =
-                        new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
-                    form.Add(medContent, "medicalBill", hospitalFileName);
-
-                    if (tarBytes != null && !string.IsNullOrWhiteSpace(tariffFileName))
-                    {
-                        var tarContent = new System.Net.Http.ByteArrayContent(tarBytes);
-                        tarContent.Headers.ContentType =
-                            new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
-                        form.Add(tarContent, "tariffBill", tariffFileName);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(spectraFieldsJson))
-                        form.Add(new System.Net.Http.StringContent(spectraFieldsJson), "spectraFields");
+                    var request = new System.Net.Http.HttpRequestMessage(
+                        System.Net.Http.HttpMethod.Post, claimAiUrl);
+                    var bodyContent = new System.Net.Http.ByteArrayContent(multipartBody);
+                    bodyContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(
+                        "multipart/form-data; boundary=" + boundary);
+                    request.Content = bodyContent;
 
                     System.Net.Http.HttpResponseMessage response;
                     string responseBody;
                     try
                     {
                         // CHECKPOINT 1d: Actual HTTP call to ClaimAI server
-                        response     = client.PostAsync(claimAiUrl, form).GetAwaiter().GetResult();
+                        response     = client.SendAsync(request).GetAwaiter().GetResult();
                         responseBody = response.Content.ReadAsStringAsync().Result;
                     }
                     catch (Exception httpEx)
