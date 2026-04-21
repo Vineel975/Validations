@@ -1,3 +1,17 @@
+Type error: Type '{ hospitalBill: string | null; tariffFile: string | null; showSampleData: false; jobId: string; state: ProcessingState; isProcessing: boolean; selectedFileResult: ExtractionResult | null; ... 4 more ...; spectraFields: any; }' is not assignable to type 'IntrinsicAttributes & ResultViewProps'.
+#16 22.00   Property 'jobId' does not exist on type 'IntrinsicAttributes & ResultViewProps'.
+#16 22.00 
+#16 22.00   163 |         tariffFile={tariffPdfUrl || null}
+#16 22.00   164 |         showSampleData={false}
+#16 22.00 > 165 |         jobId={jobId}
+#16 22.00       |         ^
+#16 22.00   166 |         state={state as ProcessingState}
+#16 22.00   167 |         isProcessing={isProcessing}
+#16 22.00   168 |         selectedFileResult={selectedFileResult}
+#16 22.07 Next.js build worker exited with code: 1 and signal: null
+#16 22.12 error: script "build" exited with code 1
+#16 ERROR: process "/bin/sh -c bun run build" did not complete successfully: exit code: 1
+
 MEMBER_DB_SERVER=spectra-db-qa.fhpl.in
 MEMBER_DB_PORT=1433
 MEMBER_DB_DATABASE=McarePlus_QA
