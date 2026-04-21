@@ -1,3 +1,5 @@
+[ClaimAI] STEP 2 StartClaimAuditProxy: false CHECKPOINT 1e FAILED: ClaimAI returned HTTP 400 from [https://claim-helixview.fhpl.net/api/audit/start]. Response: {"success":false,"error":"Request must be multipart/form-data."}
+
 <!-- Update ClaimAI URL -->
 <add key="ClaimAIUrl" value="https://claim-helixview.fhpl.net" />
 
