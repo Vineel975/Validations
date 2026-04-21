@@ -162,7 +162,6 @@ export default function JobPage() {
         hospitalBill={pdfUrl || null}
         tariffFile={tariffPdfUrl || null}
         showSampleData={false}
-        jobId={jobId}
         state={state as ProcessingState}
         isProcessing={isProcessing}
         selectedFileResult={selectedFileResult}
