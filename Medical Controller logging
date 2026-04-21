@@ -7698,6 +7698,11 @@ namespace Enrollment.Controllers
                     client.Timeout = TimeSpan.FromMinutes(3);
                     var form = new System.Net.Http.MultipartFormDataContent(boundary);
 
+                    // Explicitly set Content-Type with boundary so Next.js recognises multipart
+                    form.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("multipart/form-data");
+                    form.Headers.ContentType.Parameters.Add(
+                        new System.Net.Http.Headers.NameValueHeaderValue("boundary", boundary));
+
                     form.Add(new System.Net.Http.StringContent(claimId), "claimId");
 
                     var medContent = new System.Net.Http.ByteArrayContent(medBytes);
