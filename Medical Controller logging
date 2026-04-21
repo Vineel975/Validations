@@ -7692,65 +7692,15 @@ namespace Enrollment.Controllers
                 //   c) Wrong URL in Web.config ClaimAIUrl key
                 //   d) SSL certificate issue → check nginx SSL config on ClaimAI EC2
                 // Error message will contain the exact network exception
-                // Build multipart body manually to ensure correct Content-Type boundary format
-                // .NET MultipartFormDataContent quotes the boundary which breaks Next.js formData() parsing
+                // Build multipart body manually — avoids .NET quoting the boundary
+                // which breaks Next.js request.formData() parsing
                 string boundary = "ClaimAIBoundary" + Guid.NewGuid().ToString("N");
-                byte[] multipartBody;
-                using (var ms = new System.IO.MemoryStream())
+                byte[] multipartBody = BuildMultipartBody(
+                    boundary, claimId, hospitalFileName, medBytes,
+                    tariffFileName, tarBytes, spectraFieldsJson);
+
+                using (var client = new System.Net.Http.HttpClient())
                 {
-                    var enc  = System.Text.Encoding.UTF8;
-                    string crlf = "
-";
-
-                    // Helper to write text line
-                    Action<string> writeLine = (s) => {
-                        var b = enc.GetBytes(s + crlf);
-                        ms.Write(b, 0, b.Length);
-                    };
-
-                    // Helper to write bytes
-                    Action<byte[]> writeBytes = (b) => ms.Write(b, 0, b.Length);
-
-                    // Field: claimId
-                    writeLine("--" + boundary);
-                    writeLine("Content-Disposition: form-data; name="claimId"");
-                    writeLine("");
-                    writeLine(claimId);
-
-                    // Field: medicalBill (PDF)
-                    writeLine("--" + boundary);
-                    writeLine("Content-Disposition: form-data; name="medicalBill"; filename="" + hospitalFileName + """);
-                    writeLine("Content-Type: application/pdf");
-                    writeLine("");
-                    writeBytes(medBytes);
-                    writeLine("");
-
-                    // Field: tariffBill (optional PDF)
-                    if (tarBytes != null && !string.IsNullOrWhiteSpace(tariffFileName))
-                    {
-                        writeLine("--" + boundary);
-                        writeLine("Content-Disposition: form-data; name="tariffBill"; filename="" + tariffFileName + """);
-                        writeLine("Content-Type: application/pdf");
-                        writeLine("");
-                        writeBytes(tarBytes);
-                        writeLine("");
-                    }
-
-                    // Field: spectraFields (optional JSON string)
-                    if (!string.IsNullOrWhiteSpace(spectraFieldsJson))
-                    {
-                        writeLine("--" + boundary);
-                        writeLine("Content-Disposition: form-data; name="spectraFields"");
-                        writeLine("");
-                        writeLine(spectraFieldsJson);
-                    }
-
-                    // Final boundary
-                    var finalBoundary = enc.GetBytes("--" + boundary + "--" + crlf);
-                    ms.Write(finalBoundary, 0, finalBoundary.Length);
-                    multipartBody = ms.ToArray();
-                }
-
                 using (var client = new System.Net.Http.HttpClient())
                 {
                     client.Timeout = TimeSpan.FromMinutes(3);
@@ -7826,6 +7776,68 @@ namespace Enrollment.Controllers
                     + (ex.InnerException != null ? " | Inner: " + ex.InnerException.Message : "");
                 return Json(res);
             }
+        }
+
+        /// <summary>
+        /// Builds a raw multipart/form-data body without quoting the boundary.
+        /// .NET MultipartFormDataContent quotes the boundary string which breaks
+        /// Next.js request.formData() parser — so we build it manually.
+        /// </summary>
+        private byte[] BuildMultipartBody(
+            string boundary,
+            string claimId,
+            string medFileName, byte[] medBytes,
+            string tarFileName, byte[] tarBytes,
+            string spectraFieldsJson)
+        {
+            var enc = System.Text.Encoding.UTF8;
+            using (var ms = new System.IO.MemoryStream())
+            {
+                WriteMultipartLine(ms, enc, "--" + boundary);
+                WriteMultipartLine(ms, enc, "Content-Disposition: form-data; name=\"claimId\"");
+                WriteMultipartLine(ms, enc, "");
+                WriteMultipartLine(ms, enc, claimId);
+
+                WriteMultipartLine(ms, enc, "--" + boundary);
+                WriteMultipartLine(ms, enc, "Content-Disposition: form-data; name=\"medicalBill\"; filename=\"" + medFileName + "\"");
+                WriteMultipartLine(ms, enc, "Content-Type: application/pdf");
+                WriteMultipartLine(ms, enc, "");
+                WriteMultipartBytes(ms, enc, medBytes);
+
+                if (tarBytes != null && !string.IsNullOrWhiteSpace(tarFileName))
+                {
+                    WriteMultipartLine(ms, enc, "--" + boundary);
+                    WriteMultipartLine(ms, enc, "Content-Disposition: form-data; name=\"tariffBill\"; filename=\"" + tarFileName + "\"");
+                    WriteMultipartLine(ms, enc, "Content-Type: application/pdf");
+                    WriteMultipartLine(ms, enc, "");
+                    WriteMultipartBytes(ms, enc, tarBytes);
+                }
+
+                if (!string.IsNullOrWhiteSpace(spectraFieldsJson))
+                {
+                    WriteMultipartLine(ms, enc, "--" + boundary);
+                    WriteMultipartLine(ms, enc, "Content-Disposition: form-data; name=\"spectraFields\"");
+                    WriteMultipartLine(ms, enc, "");
+                    WriteMultipartLine(ms, enc, spectraFieldsJson);
+                }
+
+                var closing = enc.GetBytes("--" + boundary + "--\r\n");
+                ms.Write(closing, 0, closing.Length);
+                return ms.ToArray();
+            }
+        }
+
+        private void WriteMultipartLine(System.IO.MemoryStream ms, System.Text.Encoding enc, string text)
+        {
+            var b = enc.GetBytes(text + "\r\n");
+            ms.Write(b, 0, b.Length);
+        }
+
+        private void WriteMultipartBytes(System.IO.MemoryStream ms, System.Text.Encoding enc, byte[] data)
+        {
+            ms.Write(data, 0, data.Length);
+            var crlf = enc.GetBytes("\r\n");
+            ms.Write(crlf, 0, crlf.Length);
         }
 
         #region ClaimAI Document Helpers
