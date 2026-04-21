@@ -9,3 +9,11 @@
 
 
 [ClaimAI] StartClaimAuditProxy response: false StartClaimAuditProxy error: An error occurred while sending the request. null
+
+Check EC2 Security Group — the ClaimAI EC2 security group must allow inbound traffic on port 443 from the Spectra EC2 IP.
+
+# On Spectra QA EC2
+nslookup claim-helixview.fhpl.net
+ping claim-helixview.fhpl.net
+
+curl https://claim-helixview.fhpl.net/api/audit/start
