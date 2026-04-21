@@ -16,6 +16,7 @@ export default function JobPage() {
   const jobId = params.id as string;
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isEmbedded, setIsEmbedded] = useState<boolean>(false);
   const [pdfError, setPdfError] = useState<Error | null>(null);
 
   // Fetch job data by ID
@@ -92,9 +93,17 @@ export default function JobPage() {
     router.push("/login");
   };
 
-  // Check authentication
+  // Check authentication — skip if embedded in Spectra iframe (?embedded=1)
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const isEmbedded = params.get("embedded") === "1";
+      if (isEmbedded) {
+        // Bypass auth when embedded in Spectra — Spectra controls access
+        setIsEmbedded(true);
+        setIsAuthenticated(true);
+        return;
+      }
       const authStatus = localStorage.getItem("isAuthenticated");
       if (authStatus === "true") {
         setIsAuthenticated(true);
@@ -134,13 +143,15 @@ export default function JobPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 gap-4">
         <div className="text-xl text-muted-foreground">Job not found</div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleStartNewReview}
-        >
-          Start New Review
-        </Button>
+        {!isEmbedded && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleStartNewReview}
+          >
+            Start New Review
+          </Button>
+        )}
       </div>
     );
   }
