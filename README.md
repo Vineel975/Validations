@@ -1,3 +1,5 @@
+4/21/2026, 10:02:28 AM [LOG] '[DEBUG][POLICY] Failed to load benefit plan wording: Failed to connect to spectra-db-qa.fhpl.in:1433 in 15000ms'
+
 <img width="554" height="499" alt="image" src="https://github.com/user-attachments/assets/868e8756-5c78-4a59-be16-c62462c482de" />
 
 
