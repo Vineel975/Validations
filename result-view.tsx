@@ -39,7 +39,6 @@ interface ResultViewProps {
   hospitalBill: File | string | null;
   tariffFile: File | string | null;
   showSampleData: boolean;
-  jobId?: string;
   state: ProcessingState | undefined;
   isProcessing: boolean;
   selectedFileResult: ExtractionResult | null;
@@ -129,7 +128,6 @@ export function ResultView({
   hospitalBill,
   tariffFile,
   showSampleData,
-  jobId,
   state,
   isProcessing,
   selectedFileResult,
@@ -977,9 +975,12 @@ export function ResultView({
 
       alert("Changes saved successfully!");
 
-      // Notify Spectra: save complete — send jobId so page can restore iframe after reload
+      // Notify Spectra: save complete — read jobId from URL path /job/{jobId}
+      const urlJobId = typeof window !== "undefined"
+        ? window.location.pathname.split("/").filter(Boolean).pop() ?? ""
+        : "";
       window.parent.postMessage(
-        { source: "claimai", type: "claimAISaveComplete", jobId: jobId ?? "" },
+        { source: "claimai", type: "claimAISaveComplete", jobId: urlJobId },
         "*",
       );
     } catch (error) {
