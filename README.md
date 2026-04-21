@@ -1,3 +1,6 @@
+<img width="554" height="499" alt="image" src="https://github.com/user-attachments/assets/868e8756-5c78-4a59-be16-c62462c482de" />
+
+
 [ClaimAI] STEP 2 StartClaimAuditProxy: false CHECKPOINT 1e FAILED: ClaimAI returned HTTP 400 from [https://claim-helixview.fhpl.net/api/audit/start]. Response: {"success":false,"error":"Request must be multipart/form-data."}
 
 <!-- Update ClaimAI URL -->
