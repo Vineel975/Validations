@@ -7129,7 +7129,7 @@
         //  5. Set iframe src = http://localhost:3000/job/{jobId}?embedded=1
         //     Both Spectra and ClaimAI are on http:// → no Mixed Content, no proxy needed
 
-        var _claimAiUrl = 'http://localhost:3000';
+        var _claimAiUrl = '@(System.Configuration.ConfigurationManager.AppSettings["ClaimAIUrl"] ?? "http://localhost:3000")';
         //  6. ClaimAI UI renders fully inside the iframe
 
         function RestoreAiSummaryIfSaved(claimID) {
@@ -7164,8 +7164,35 @@
             return true; // Restored — skip InitAiSummary
         }
 
+        /*
+         * ═══════════════════════════════════════════════════════════════════
+         * CLAIMAI INTEGRATION — FULL FLOW WITH CHECKPOINTS
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * STEP 1 → InitAiSummary
+         *   Browser calls GetMedicalBillDocument → GetTariffDocument
+         *   If STEP 1 fails → check browser console for [ClaimAI] logs
+         *
+         * STEP 2 → SubmitAndLoadIframe
+         *   Browser POSTs to /MedicalScrutiny/StartClaimAuditProxy
+         *   Spectra server forwards to ClaimAI (claim-helixview.fhpl.net)
+         *   If STEP 2 fails → check StartClaimAuditProxy error message
+         *
+         * STEP 3 → ClaimAI processes PDF
+         *   ClaimAI uploads to Convex storage → Convex runs AI
+         *   If STEP 3 fails → check Convex dashboard logs
+         *
+         * STEP 4 → Iframe loads job result
+         *   Browser loads iframe: {ClaimAIUrl}/job/{jobId}?embedded=1
+         *   If STEP 4 fails → check if ClaimAI is accessible from browser
+         *
+         * STEP 5 → Save
+         *   Iframe sends postMessages → Spectra saves to DB
+         *   If STEP 5 fails → check individual save AJAX responses in console
+         * ═══════════════════════════════════════════════════════════════════
+         */
         function InitAiSummary(claimID, slNo) {
-            console.log('[ClaimAI] InitAiSummary started. claimID:', claimID, 'slNo:', slNo);
+            console.log('[ClaimAI] STEP 1 START: InitAiSummary. claimID:', claimID, 'slNo:', slNo, 'ClaimAI URL:', _claimAiUrl);
             showAiStatus('Loading medical bill...');
 
             $.ajax({
@@ -7173,7 +7200,10 @@
                 type: 'GET',
                 data: { claimId: claimID, slNo: slNo },
                 success: function(res) {
-                    console.log('[ClaimAI] GetMedicalBillDocument response:', res.Success, res.Message);
+                    // STEP 1a RESULT: Medical bill fetch response
+                    // If res.Success=false → check res.Message for CHECKPOINT details
+                    // Common issues: zip not found, wrong claimId, Enviroment key mismatch
+                    console.log('[ClaimAI] STEP 1a GetMedicalBillDocument:', res.Success, res.Message);
                     if (!res.Success || !res.Data || !res.Data.base64Content) {
                         showAiError('Could not load medical bill: ' + (res.Message || 'Check MedicalBillDocumentPath in Web.config'));
                         return;
@@ -7188,7 +7218,10 @@
                         type: 'GET',
                         data: { claimId: claimID },
                         success: function(tarRes) {
-                            console.log('[ClaimAI] GetTariffDocument response:', tarRes.Success, tarRes.Message);
+                            // STEP 1b RESULT: Tariff fetch response
+                            // If tarRes.Success=false → tariff not found but processing continues without it
+                            // Check tarRes.Message for CHECKPOINT details
+                            console.log('[ClaimAI] STEP 1b GetTariffDocument:', tarRes.Success, tarRes.Message);
                             var tarB64 = null, tarFileName = null;
                             if (tarRes.Success && tarRes.Data && tarRes.Data.base64Content) {
                                 tarB64      = tarRes.Data.base64Content;
@@ -7356,13 +7389,27 @@
                 data:        JSON.stringify(payload),
                 timeout:     120000,
                 success: function(res) {
-                    console.log('[ClaimAI] StartClaimAuditProxy response:', res.Success, res.Message, res.Data);
+                    // STEP 2 RESULT: StartClaimAuditProxy response
+                    // SUCCESS → res.Data.jobId exists → iframe will load
+                    // FAILURE → check res.Message for exact CHECKPOINT:
+                    //   CHECKPOINT 1d FAILED → Spectra cannot reach ClaimAI server
+                    //     Fix: check ClaimAIUrl in Web.config, check ClaimAI is running (pm2 status)
+                    //   CHECKPOINT 1e FAILED → ClaimAI returned error HTTP status
+                    //     Fix: check ClaimAI Next.js logs on EC2
+                    //   CHECKPOINT 1f FAILED → ClaimAI reached but Convex failed
+                    //     Fix: check NEXT_PUBLIC_CONVEX_URL in ClaimAI .env.local on EC2
+                    console.log('[ClaimAI] STEP 2 StartClaimAuditProxy:', res.Success, res.Message, res.Data);
                     if (!res.Success || !res.Data || !res.Data.jobId) {
                         showAiError('Convex error: ' + (res.Message || 'No jobId returned'));
                         return;
                     }
+                    // STEP 3/4: Load iframe with job result
+                    // If iframe shows blank/error → check:
+                    //   - Is ClaimAI URL accessible from BROWSER (not just server)?
+                    //   - Is CSP_FrameSrc in Web.config updated with ClaimAI subdomain?
+                    //   - Check browser Network tab for iframe load errors
                     var src = _claimAiUrl + '/job/' + encodeURIComponent(res.Data.jobId) + '?embedded=1';
-                    console.log('[ClaimAI] Loading iframe:', src);
+                    console.log('[ClaimAI] STEP 3/4 Loading iframe:', src);
                     $('#divAiLoading').hide();
                     $('#ifrClaimAI').attr('src', src).show();
                 },
@@ -8762,6 +8809,14 @@
                 }
 
                 // Save complete — collapse widget, store jobId, reload page
+                // STEP 5: Save postMessages from iframe
+                // Each postMessage type triggers an AJAX save to Spectra DB
+                // If saves are not working → check individual AJAX responses below
+                // setClinicalDetails → SaveClinicalDetailsForClaimAI
+                // setBillingDetails  → SaveBillingForClaimAI
+                // setIcdSlots        → SaveCodingRowForClaimAI
+                // claimAISaveComplete → triggers page reload
+
                 if (event.data.type === 'claimAISaveComplete') {
                     var savedJobId = event.data.jobId || '';
 
