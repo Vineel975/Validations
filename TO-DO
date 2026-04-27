@@ -1,11 +1,7 @@
-06-04-2026 : Monday
-
-
-1. ICD codes 1,2,3 should be populated from the master icd codes data.
-2. Benefit Plan -> Alignment Conditons -> Alignment cappings :  this info should be populated in the benefit extraction tab.
-3. Before Total Amount Approved give three lines : Total Medical Bill,  Tariff , Benifit plan this much and give me the Approved amount and explain why we are approving this much only in the below single line.
-4. DONE - Remove notes section.
-5. Keep only save button below. remove save and raise / don't save and raise query buttons.
-6. When user goes to the below claim actions button -> raise query -> the validations/missing A-scan report that should be populated there.
-7. DONE - Add one single tab at the starting -> Case summary -> what's the problem, amount details.
-8. remove the UI rendering, the final UI page with all the validations should appear at once.
+SELECT 
+    p.name, t.name as type, p.max_length
+FROM sys.procedures sp
+JOIN sys.parameters p ON p.object_id = sp.object_id
+JOIN sys.types t ON t.user_type_id = p.user_type_id
+WHERE sp.name = 'USP_CLA_SaveClaimCodingData'
+ORDER BY p.parameter_id
