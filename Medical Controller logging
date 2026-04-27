@@ -9103,6 +9103,7 @@ namespace Enrollment.Controllers
                 dt.Columns.Add("PolicySublimit",      typeof(decimal));
                 dt.Columns.Add("AlimentExpression",   typeof(int));
                 dt.Columns.Add("Alimentpower",        typeof(decimal));
+                dt.Columns.Add("Package Type",        typeof(int));    // VM internal field — required by Save_CodingDetails
 
 
                 // PackageRate = (EligibleAmount / PackageAmount) * 100
@@ -9146,6 +9147,7 @@ namespace Enrollment.Controllers
                 row["PolicySublimit"]     = DBNull.Value;
                 row["AlimentExpression"]  = DBNull.Value;
                 row["Alimentpower"]       = DBNull.Value;
+                row["Package Type"]       = pkgType > 0 ? (object)pkgType : DBNull.Value;
                 dt.Rows.Add(row);
 
                 // 5. Save — BillingType 202 = Package (Primary category)
