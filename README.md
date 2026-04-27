@@ -1,90 +1,35 @@
-ABSLIPortingColumns
-AssignedQueLink
-BPCopay
-BPExclusion
-BPServices
-BPSIAilment
-BPSIConditions
-BPSIConfigDetails
-BPSIPriority
-BulkClaimAddressUpdation
-BulkClaimAmountRecivedDtAgeDob
-BulkClaimBankUpdation_Auditor
-BulkClaimICDDignosis
-BulkClaimTdsUpdation
-BulkDiscontinue
-BulkInvestigation
-BulkRejection
-BulkSettlement
-BulkSettlement_ClaimsInsert
-BulkUpdation
-CallForward
-CardPrintDates
-ClaimBillDetails
-ClaimCoverages
-ClaimDeductionDetails
-ClaimPastHistory
-ClaimRejections
-ClaimRules
-ClaimsCoding
-ClaimsIRReasons
-ClaimsIRReasons1
-ClaimsServiceDetails
-ClaimUploadDocsDetails
-ClaimUtilization
-Combination
-Communication
-CorporateContacts_Escalation_Matrix_Table
-CorporateUpdateEmail
-DHFLPortingColumns
-DMSFiles
-FamilyDefinition
-Get_Uhidno
-gropmemberData
-INSURERCONTACTSINSERT
-LetterPrintID
-LetterPrintStatus
-MagmaPortingColumns
-MagmaPortingColumns_SP3V_4847
-MemberContacts
-MemberData
-MemberPolicyList
-MemberPorting
-MemberPortingAddress
-MemberPortingEndorsement
-MemberPortingPolicy
-MemberSI
-oic_hdfcdata
-Parametermatch
-PolicyID
-PolicyUpdate
-PolicyUpdateEmail
-Portingcolumns
-Portingcolumns_20251216
-Portingcolumns1
-PortingcolumnsS3V4715
-PortingcolumnsS3V4715_RK
-ProcedureOrSpecialityPackage
-ProviderBulkFlagCreation
-ProviderBulkFlagRemove
-ProviderBulkFlagUpdation
-ProviderBulkMOUCreation
-ProviderBulkMOUUpdation
-ProviderBulkNonNetworkPRCCreation
-ProviderBulkPincodeUpdation
-ProviderBulkPRCCreation
-ProviderBulkPRNUpdation
-ProviderFacilities
-ProviderReqContacts
-ProvReqPackage
-ProvReqServices
-provReqTariff
-RuleInputs
-ServiceSpecificMouTariff
-Splitpolicyyears
-stg_corporate
-TagicMemberPorting
-TagicPortingColumns
-TatCommunication
-UIIC_GCCore_DataRetrieve
-UIIC_GCCore_MemberData
+TPAProcedureID	1	int
+TPALevel1	2	int
+TPALevel2	3	int
+TPALevel3	4	int
+PackageRate	5	money
+PackageRatio	6	decimal
+TreatementTypeID_19	7	int
+isGipsa	8	bit
+isDayCare	9	bit
+isCI	10	bit
+isPED	11	bit
+TypeOfAnesthesiaID	12	tinyint
+Exclusions	13	varchar
+SurgeryDate	14	datetime
+BillAmount	15	money
+DisallowedAmount	16	money
+DisallowedReasonIDs	17	varchar
+PayableAmount	18	money
+BufferAmount	19	money
+AdditionalreasonIDs	20	varchar
+Discount	21	money
+Copay	22	money
+Remarks	23	varchar
+ICDCode	24	int
+PCSCode	25	varchar
+PCSDescription	26	varchar
+EligibleAmount	27	money
+AdditionalAmount	28	money
+BPCoverageLimit	29	money
+ProcessHTML	30	varchar
+Overridepackage	31	bit
+Overridesuminsured	32	bit
+PolicySublimit	33	money
+AlimentExpression	34	int
+Alimentpower	35	decimal
