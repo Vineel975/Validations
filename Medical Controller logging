@@ -8971,192 +8971,119 @@ namespace Enrollment.Controllers
         /// <summary>
         /// Called by ClaimAI to save a single coding row without knowing the exact DataTable schema.
         [HttpPost]
-        // VERSION: 2026-04-27 — 35 columns, no PackageType
+        // VERSION: 2026-04-27 — calls USP_CLA_SaveClaimCodingData with individual params
         public ActionResult SaveCodingRowForClaimAI(
-            string claimId, string slNo, string tpaProcedureId,
-            string icdCodeStr, string eligibleAmount, string packageAmount)
+            string claimId        = null,
+            string slNo           = null,
+            string tpaProcedureId = null,
+            string icdCodeStr     = null,
+            string eligibleAmount = null,
+            string packageAmount  = null)
         {
             try
             {
                 if (Session[SessionValue.UserRegionID] == null)
-                    return Json(new { success = false, message = "Session expired" });
+                    return Json(new { success = false, message = "Session expired." });
 
-                long claimIdLong; int slNoInt; int tpaProcId = 0;
-                if (!long.TryParse((claimId ?? "").Trim(), out claimIdLong) ||
-                    !int.TryParse((slNo ?? "").Trim(), out slNoInt))
-                    return Json(new { success = false, message = "Invalid ClaimID or SlNo" });
-                int.TryParse((tpaProcedureId ?? "").Trim(), out tpaProcId);
+                // Parse inputs
+                long   claimIdLong  = 0;
+                int    slNoInt      = 1;
+                int    tpaProcId    = 0;
+                decimal eligibleAmt = 0;
+                decimal packageAmt  = 0;
 
-                decimal eligibleAmt = 0m; decimal.TryParse((eligibleAmount ?? "").Trim(), out eligibleAmt);
-                decimal packageAmt  = 0m; decimal.TryParse((packageAmount  ?? "").Trim(), out packageAmt);
+                long.TryParse((claimId ?? "").Trim(),        out claimIdLong);
+                int.TryParse((slNo ?? "1").Trim(),           out slNoInt);
+                int.TryParse((tpaProcedureId ?? "").Trim(),  out tpaProcId);
+                decimal.TryParse((eligibleAmount ?? "0").Trim(), out eligibleAmt);
+                decimal.TryParse((packageAmount  ?? "0").Trim(), out packageAmt);
 
+                if (claimIdLong == 0)
+                    return Json(new { success = false, message = "Invalid ClaimID." });
+
+                // Get connection string
                 string connStr = System.Configuration.ConfigurationManager
                     .ConnectionStrings["McarePlusEntities"].ConnectionString;
                 if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
                 {
-                    var m2 = System.Text.RegularExpressions.Regex.Match(connStr,
-                        @"provider connection string=""([^""]+)""",
+                    var m = System.Text.RegularExpressions.Regex.Match(
+                        connStr, "provider connection string=\"([^\"]+)\"",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m2.Success) connStr = m2.Groups[1].Value.Replace("&quot;", "\"");
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
-                int tpaLevel1Id = 0, tpaLevel2Id = 0, icdNumericId = 0;
-                int pcsNumericId = 0, treatTypeId = 0, pkgType = 0, siCategory = 69;
-                string pcsCodeStr = null, pcsDesc = null;
-                string vMessage = string.Empty;
-
+                // Resolve IssueID from claim
+                int issueId = 0;
                 using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"SELECT TOP 1 ia.ID
+                                        FROM Claims c
+                                        JOIN Mst_IssuingAuthority ia ON ia.ID = c.InsuranceCompanyID
+                                        WHERE c.ID = @cid AND ISNULL(c.Deleted,0) = 0";
+                    cmd.Parameters.AddWithValue("@cid", claimIdLong);
+                    var val = cmd.ExecuteScalar();
+                    if (val != null && val != DBNull.Value)
+                        issueId = Convert.ToInt32(val);
+                }
 
-                    // 1. Get procedure details + parent chain for Level1/2
-                    if (tpaProcId > 0)
+                // Resolve ICD10 numeric ID from code string
+                int icdNumericId = 0;
+                if (!string.IsNullOrWhiteSpace(icdCodeStr))
+                {
+                    using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                     {
-                        var cmdP = new System.Data.SqlClient.SqlCommand(@"
-                            SELECT p.ParentID AS L2, g.ParentID AS L1,
-                                ISNULL(p.TreatmentType_P19,0) AS TT,
-                                ISNULL(p.Level,0) AS PKT,
-                                ISNULL(p.ICDCode,'') AS ICD,
-                                ISNULL(p.PCSCode,'') AS PCS,
-                                ISNULL(p.InvestigationID,0) AS PCSID,
-                                ISNULL(p.PPNDescription,'') AS PPND
-                            FROM TPAProcedures p
-                            LEFT JOIN TPAProcedures g ON g.ID=p.ParentID
-                            WHERE p.ID=@id AND p.Deleted=0", conn);
-                        cmdP.Parameters.AddWithValue("@id", tpaProcId);
-                        using (var r = cmdP.ExecuteReader())
-                        {
-                            if (r.Read())
-                            {
-                                tpaLevel2Id  = r["L2"]   != DBNull.Value ? Convert.ToInt32(r["L2"])   : 0;
-                                tpaLevel1Id  = r["L1"]   != DBNull.Value ? Convert.ToInt32(r["L1"])   : 0;
-                                treatTypeId  = Convert.ToInt32(r["TT"]);
-                                pkgType      = Convert.ToInt32(r["PKT"]);
-                                pcsNumericId = Convert.ToInt32(r["PCSID"]);
-                                pcsCodeStr   = r["PCS"].ToString().Trim();
-                                pcsDesc      = r["PPND"].ToString().Trim();
-                                if (string.IsNullOrEmpty(pcsDesc)) pcsDesc = pcsCodeStr;
-                                if (string.IsNullOrEmpty(icdCodeStr))
-                                    icdCodeStr = r["ICD"].ToString().Trim();
-                            }
-                        }
-                    }
-
-                    // 2. Resolve ICD numeric ID — walk up code if needed
-                    if (!string.IsNullOrEmpty(icdCodeStr))
-                    {
+                        conn.Open();
                         string code = icdCodeStr.Trim();
                         while (code.Length > 0 && icdNumericId == 0)
                         {
-                            var cmdI = new System.Data.SqlClient.SqlCommand(
-                                "SELECT TOP 1 ID FROM ICD10 WHERE DiseaseCode=@dc AND Deleted=0 ORDER BY Level DESC", conn);
-                            cmdI.Parameters.AddWithValue("@dc", code);
-                            var sc = cmdI.ExecuteScalar();
+                            var cmd = conn.CreateCommand();
+                            cmd.CommandText = "SELECT TOP 1 ID FROM ICD10 WHERE DiseaseCode=@dc AND Deleted=0 ORDER BY Level DESC";
+                            cmd.Parameters.AddWithValue("@dc", code);
+                            var sc = cmd.ExecuteScalar();
                             if (sc != null && sc != DBNull.Value) { icdNumericId = Convert.ToInt32(sc); break; }
                             if (code.Contains("."))
                             {
-                                int dot = code.LastIndexOf('.'); string after = code.Substring(dot+1);
-                                code = after.Length > 1 ? code.Substring(0, dot+1) + after.Substring(0, after.Length-1) : code.Substring(0, dot);
+                                int dot = code.LastIndexOf('.'); string after = code.Substring(dot + 1);
+                                code = after.Length > 1
+                                    ? code.Substring(0, dot + 1) + after.Substring(0, after.Length - 1)
+                                    : code.Substring(0, dot);
                             }
-                            else if (code.Length > 1) code = code.Substring(0, code.Length-1);
+                            else if (code.Length > 1) code = code.Substring(0, code.Length - 1);
                             else break;
                         }
                     }
-
-                    // 3. SICategory — 69 = Primary (hardcoded, no SumInsuredCategory table in DB)
                 }
 
-                // 4. Build exact 35-column DataTable
-                var dt = new System.Data.DataTable();
-                dt.Columns.Add("TPAProcedureID",      typeof(int));
-                dt.Columns.Add("TPALevel1",           typeof(int));
-                dt.Columns.Add("TPALevel2",           typeof(int));
-                dt.Columns.Add("TPALevel3",           typeof(int));
-                dt.Columns.Add("PackageRate",         typeof(decimal));
-                dt.Columns.Add("PackageRatio",        typeof(decimal));
-                dt.Columns.Add("TreatementTypeID_19", typeof(int));
-                dt.Columns.Add("isGipsa",             typeof(bool));
-                dt.Columns.Add("isDayCare",           typeof(bool));
-                dt.Columns.Add("isCI",                typeof(bool));
-                dt.Columns.Add("isPED",               typeof(bool));
-                dt.Columns.Add("TypeOfAnesthesiaID",  typeof(byte));
-                dt.Columns.Add("Exclusions",          typeof(string));
-                dt.Columns.Add("SurgeryDate",         typeof(DateTime));
-                dt.Columns.Add("BillAmount",          typeof(decimal));
-                dt.Columns.Add("DisallowedAmount",    typeof(decimal));
-                dt.Columns.Add("DisallowedReasonIDs", typeof(string));
-                dt.Columns.Add("PayableAmount",       typeof(decimal));
-                dt.Columns.Add("BufferAmount",        typeof(decimal));
-                dt.Columns.Add("AdditionalreasonIDs", typeof(string));
-                dt.Columns.Add("Discount",            typeof(decimal));
-                dt.Columns.Add("Copay",               typeof(decimal));
-                dt.Columns.Add("Remarks",             typeof(string));
-                dt.Columns.Add("ICDCode",             typeof(int));
-                dt.Columns.Add("PCSCode",             typeof(string));
-                dt.Columns.Add("PCSDescription",      typeof(string));
-                dt.Columns.Add("EligibleAmount",      typeof(decimal));
-                dt.Columns.Add("AdditionalAmount",    typeof(decimal));
-                dt.Columns.Add("BPCoverageLimit",     typeof(decimal));
-                dt.Columns.Add("ProcessHTML",         typeof(string));
-                dt.Columns.Add("Overridepackage",     typeof(bool));
-                dt.Columns.Add("Overridesuminsured",  typeof(bool));
-                dt.Columns.Add("PolicySublimit",      typeof(decimal));
-                dt.Columns.Add("AlimentExpression",   typeof(int));
-                dt.Columns.Add("Alimentpower",        typeof(decimal));
-                dt.Columns.Add("Package Type",        typeof(int));    // VM internal field — required by Save_CodingDetails
+                // Call USP_CLA_SaveClaimCodingData with individual parameters
+                // SP signature: @ClaimID, @Slno, @TPAProcedureID, @BillAmount, @PackageRate,
+                //               @Discount, @EligibleAmount, @DisallowedAmount, @PayableAmount,
+                //               @IssueID, @SpecialityType, @ICD10Code
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                    cmd.CommandText = "USP_CLA_SaveClaimCodingData";
 
+                    cmd.Parameters.AddWithValue("@ClaimID",        claimIdLong);
+                    cmd.Parameters.AddWithValue("@Slno",           (byte)slNoInt);
+                    cmd.Parameters.AddWithValue("@TPAProcedureID", tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@BillAmount",     packageAmt > 0 ? (object)packageAmt : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@PackageRate",    packageAmt > 0 ? (object)packageAmt : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@Discount",       0m);
+                    cmd.Parameters.AddWithValue("@EligibleAmount", eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@DisallowedAmount", DBNull.Value);
+                    cmd.Parameters.AddWithValue("@PayableAmount",  eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@IssueID",        issueId > 0 ? (object)(byte)issueId : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@SpecialityType", DBNull.Value);
+                    cmd.Parameters.AddWithValue("@ICD10Code",      icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
 
-                // PackageRate = (EligibleAmount / PackageAmount) * 100
-                decimal pkgRate = (packageAmt > 0 && eligibleAmt > 0)
-                    ? Math.Round((eligibleAmt / packageAmt) * 100m, 2)
-                    : 0m;
+                    cmd.ExecuteNonQuery();
+                }
 
-                var row = dt.NewRow();
-                row["TPAProcedureID"]      = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
-                row["TPALevel1"]           = tpaLevel1Id > 0  ? (object)tpaLevel1Id  : DBNull.Value;
-                row["TPALevel2"]           = tpaLevel2Id > 0  ? (object)tpaLevel2Id  : DBNull.Value;
-                row["TPALevel3"]           = tpaProcId > 0    ? (object)tpaProcId    : DBNull.Value;
-                row["PackageRate"]         = pkgRate;                               // Req #3
-                row["PackageRatio"]        = pkgRate;                               // same ratio
-                row["TreatementTypeID_19"] = treatTypeId > 0  ? (object)treatTypeId  : DBNull.Value;
-                row["isGipsa"]             = true;
-                row["isDayCare"]           = false;
-                row["isCI"]               = false;
-                row["isPED"]              = false;
-                row["TypeOfAnesthesiaID"]  = DBNull.Value;
-                row["Exclusions"]          = DBNull.Value;
-                row["SurgeryDate"]         = DBNull.Value;
-                row["BillAmount"]          = packageAmt > 0 ? (object)packageAmt : DBNull.Value; // Req #2
-                row["DisallowedAmount"]    = 0m;                                    // Req #4
-                row["DisallowedReasonIDs"] = DBNull.Value;
-                row["PayableAmount"]       = eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value;
-                row["BufferAmount"]        = DBNull.Value;
-                row["AdditionalreasonIDs"] = DBNull.Value;
-                row["Discount"]            = 0m;
-                row["Copay"]              = DBNull.Value;
-                row["Remarks"]            = DBNull.Value;
-                row["ICDCode"]            = icdNumericId > 0  ? (object)icdNumericId : DBNull.Value;
-                row["PCSCode"]            = !string.IsNullOrEmpty(pcsCodeStr) ? (object)pcsCodeStr : DBNull.Value;
-                row["PCSDescription"]     = !string.IsNullOrEmpty(pcsDesc)    ? (object)pcsDesc    : DBNull.Value;
-                row["EligibleAmount"]     = eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value;
-                row["AdditionalAmount"]   = DBNull.Value;
-                row["BPCoverageLimit"]    = DBNull.Value;
-                row["ProcessHTML"]        = DBNull.Value;
-                row["Overridepackage"]    = false;
-                row["Overridesuminsured"] = false;
-                row["PolicySublimit"]     = DBNull.Value;
-                row["AlimentExpression"]  = DBNull.Value;
-                row["Alimentpower"]       = DBNull.Value;
-                row["Package Type"]       = pkgType > 0 ? (object)pkgType : DBNull.Value;
-                dt.Rows.Add(row);
-
-                // 5. Save — BillingType 202 = Package (Primary category)
-                int result = _objMadicalScrutinyVM.Save_CodingDetails(
-                    claimIdLong, slNoInt, 202, dt,
-                    Convert.ToInt32(Session[SessionValue.UserRegionID]), out vMessage);
-
-                bool ok = result > 0 || (vMessage != null && vMessage.ToLower().Contains("success"));
-                return Json(new { success = ok, message = vMessage });
+                return Json(new { success = true, message = "Coding saved." });
             }
             catch (Exception ex)
             {
@@ -9164,6 +9091,7 @@ namespace Enrollment.Controllers
                 return Json(new { success = false, message = ex.Message });
             }
         }
+
 
         public ActionResult GetClaimFieldsForValidation(string claimId)
         {
