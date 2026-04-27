@@ -1,6 +1,1 @@
-Hi @Saranya,
-
-Needed creation of sub-domains with these three names : claims , claims-backend , claims-auth. 
-
-Regards,
-Vineel.
+Convex error: CHECKPOINT 1e FAILED: ClaimAI returned HTTP 413 from [https://claims-helixview-uat.fhpl.net/api/audit/start]. Response: <html> <head><title>413 Request Entity Too Large</title></head> <body> <center><h1>413 Request Entity Too Large</h1></center> <hr><center>nginx/1.28.3</center> </body> </html>
