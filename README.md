@@ -1,1 +1,6 @@
-Convex error: CHECKPOINT 1e FAILED: ClaimAI returned HTTP 500 from [https://claims-helixview-uat.fhpl.net/api/audit/start]. Response: {"success":false,"error":"Failed to upload medical bill: {\n \"message\":\"Unauthorized\",\n \"request_id\":\"5048dd23f233021a0c1e0f08bc589e3c\"\n}"}
+SELECT c.name, c.column_id, t.name as type
+FROM sys.table_types tt
+JOIN sys.columns c ON c.object_id = tt.type_table_object_id  
+JOIN sys.types t ON t.user_type_id = c.user_type_id
+WHERE tt.name = 'UDT_CodingDetails'
+ORDER BY c.column_id
