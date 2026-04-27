@@ -8964,13 +8964,14 @@ namespace Enrollment.Controllers
             catch (Exception ex)
             {
                 Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(ex));
-                return Json(new { success = false, message = ex.Message });
+                return Json(new { success = false, message = ex.Message + " | Line: " + (ex.StackTrace ?? "").Replace("\r\n", " -> ").Substring(0, Math.Min(300, (ex.StackTrace ?? "").Length)) });
             }
         }
 
         /// <summary>
         /// Called by ClaimAI to save a single coding row without knowing the exact DataTable schema.
         [HttpPost]
+        // VERSION: 2026-04-27 — 35 columns, no PackageType
         public ActionResult SaveCodingRowForClaimAI(
             string claimId, string slNo, string tpaProcedureId,
             string icdCodeStr, string eligibleAmount, string packageAmount)
