@@ -1,35 +1,39 @@
-TPAProcedureID	1	int
-TPALevel1	2	int
-TPALevel2	3	int
-TPALevel3	4	int
-PackageRate	5	money
-PackageRatio	6	decimal
-TreatementTypeID_19	7	int
-isGipsa	8	bit
-isDayCare	9	bit
-isCI	10	bit
-isPED	11	bit
-TypeOfAnesthesiaID	12	tinyint
-Exclusions	13	varchar
-SurgeryDate	14	datetime
-BillAmount	15	money
-DisallowedAmount	16	money
-DisallowedReasonIDs	17	varchar
-PayableAmount	18	money
-BufferAmount	19	money
-AdditionalreasonIDs	20	varchar
-Discount	21	money
-Copay	22	money
-Remarks	23	varchar
-ICDCode	24	int
-PCSCode	25	varchar
-PCSDescription	26	varchar
-EligibleAmount	27	money
-AdditionalAmount	28	money
-BPCoverageLimit	29	money
-ProcessHTML	30	varchar
-Overridepackage	31	bit
-Overridesuminsured	32	bit
-PolicySublimit	33	money
-AlimentExpression	34	int
-Alimentpower	35	decimal
+USP_CLA_Codingprocedurelimits
+USP_CLA_Codingprocedurelimits_03_05_24
+USP_CLA_Codingprocedurelimits_06_06_24
+USP_CLA_Codingprocedurelimits_07_05_24
+USP_CLA_Codingprocedurelimits_07_06_24
+USP_CLA_Codingprocedurelimits_09_02_24
+USP_CLA_Codingprocedurelimits_12_04_24
+USP_CLA_Codingprocedurelimits_14_02_24
+USP_CLA_Codingprocedurelimits_14_03_24
+USP_CLA_Codingprocedurelimits_16_06_2025
+USP_CLA_Codingprocedurelimits_16_10_2025
+USP_CLA_Codingprocedurelimits_18_10_23
+USP_CLA_Codingprocedurelimits_20_11_23
+USP_CLA_Codingprocedurelimits_23_11_23
+USP_CLA_Codingprocedurelimits_23_12_23
+USP_CLA_Codingprocedurelimits_24_11_23
+USP_CLA_Codingprocedurelimits_25_09_23
+USP_CLA_Codingprocedurelimits_27_09_23
+USP_CLA_Codingprocedurelimits_29_09_23
+USP_CLA_Codingprocedurelimits_31_05_24
+USP_CLA_Codingprocedurelimits_6April26
+USP_CLA_Codingprocedurelimits_backup
+USP_CLA_Codingprocedurelimits_backup_26062023
+USP_CLA_Codingprocedurelimits_Test
+USP_CLA_SaveClaimCodingData
+USP_CLA_SaveClaimCodingData_06_06_24
+USP_CLA_SaveClaimCodingData_20231113
+USP_CLA_SaveClaimCodingData_23_12_23
+USP_CLA_SaveClaimCodingData_27_11_23
+USP_CLA_SaveClaimCodingData_Adjudication
+USP_ClaimCoding_Insert
+Usp_ClaimCoding_Retrieve
+USP_Codingprocedurelimits
+USP_Codingprocedurelimits_23_08_24
+USP_Codingprocedurelimits_24_10_2025
+USP_Codingprocedurelimits_30_10_2025
+Usp_Epreauth_ClaimCoding_Retrieve
+USP_GetICDCodesAtCodingLevel
+USP_IcdCoding_Validations
