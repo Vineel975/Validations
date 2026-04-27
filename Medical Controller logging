@@ -9012,21 +9012,8 @@ namespace Enrollment.Controllers
                     if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
-                // Resolve IssueID from claim
+                // IssueID is optional in SP (@IssueID tinyint=null) — skip lookup, pass null
                 int issueId = 0;
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandText = @"SELECT TOP 1 ia.ID
-                                        FROM Claims c
-                                        JOIN Mst_IssuingAuthority ia ON ia.ID = c.InsuranceCompanyID
-                                        WHERE c.ID = @cid AND ISNULL(c.Deleted,0) = 0";
-                    cmd.Parameters.AddWithValue("@cid", claimIdLong);
-                    var val = cmd.ExecuteScalar();
-                    if (val != null && val != DBNull.Value)
-                        issueId = Convert.ToInt32(val);
-                }
 
                 // Resolve ICD10 numeric ID from code string
                 int icdNumericId = 0;
