@@ -1,7 +1,12 @@
-SELECT 
-    p.name, t.name as type, p.max_length
-FROM sys.procedures sp
-JOIN sys.parameters p ON p.object_id = sp.object_id
-JOIN sys.types t ON t.user_type_id = p.user_type_id
-WHERE sp.name = 'USP_CLA_SaveClaimCodingData'
-ORDER BY p.parameter_id
+@ClaimID	bigint	8
+@Slno	tinyint	1
+@TPAProcedureID	int	4
+@BillAmount	money	8
+@PackageRate	money	8
+@Discount	money	8
+@EligibleAmount	money	8
+@DisallowedAmount	money	8
+@PayableAmount	money	8
+@IssueID	tinyint	1
+@SpecialityType	int	4
+@ICD10Code	int	4
