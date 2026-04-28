@@ -1,12 +1,31 @@
-@ClaimID	bigint	8
-@Slno	tinyint	1
-@TPAProcedureID	int	4
-@BillAmount	money	8
-@PackageRate	money	8
-@Discount	money	8
-@EligibleAmount	money	8
-@DisallowedAmount	money	8
-@PayableAmount	money	8
-@IssueID	tinyint	1
-@SpecialityType	int	4
-@ICD10Code	int	4
+Processing logs- please remove this
+Submitting to AI...-- Text size increase
+Live updates while we analyze your hospital bill.
+Show logs--- Let's change the text
+Status: processing • 0/1 tasks completed
+Logs are hidden. Toggle to view live updates.
+4. Sukhmander Kaur was admitted to Adesh Institute Of Medical Sciences Eye Deptt on 01/04/2026 with R/E CATARACT, R/E IMSC. Treatment: R/E Phaco c IOL implant. Total bill amount is INR 52,000.-- Let's summarize this differently..
+5. AI Value-DB Value to be replaced.-- Remove 'Source'
+6. Remove Discount (PA initial- not applicable)
+7. Document checklist- based on availability. Let's give a small text
+8. UCR- Ribbon Shade
+9. Diagnosis-Linked Test Checks Investigations/Supporting Investigations
+10. ICD- UX scrolls
+11. Check if TPA procedures is loading or not.
+12.Diagnosis-Linked Test Checks  please move it near or in the 'Diagnosis' section (Condition- can be removed)
+Test to be renamed as 'Supporting Report'
+13.Allow edit in 'Diagnosis'. In this ex 26041586013, hospital mistyped the diagnosis.
+14. Dynamic routing-Medical Admissibility Check
+15. Rotatable PDF -Tariff extraction
+16. Tariff Extraction- ?Editable- May have to provide override info...Reference page number.
+17. Benefit extraction  - open the Tab when clicked on Benefit Extraction.
+Display only remarks specific to Cataract.
+18. Live · McarePlus DB- to be removed
+19. Balance Sum Insured- bring Utilized, blocked amounts.
+20. Presenting Complaints to be placed near diagnosis/doctor notes
+21. Doctor Notes near the diagnosis label to be renamed as 'Doctor notes from hospital' 
+22. Doctor Notes to be renamed as 'Processing Doctor Notes'. 
+23. Post saving- Edit coding and a click on ICD- is not populating the max level ICD.
+24. Patient Condition- if there is no value- bring it up as 'Recovered'
+25. Approved Accommodation- fix the issue.
+26. 'Save Billing' - AI Summary is getting is reprocessed.
